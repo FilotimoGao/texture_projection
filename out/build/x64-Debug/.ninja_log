@@ -1,3 +1,13 @@
 # ninja log v5
-2	1815	7467211752458659	CMakeFiles/Texture_projection.dir/main.cpp.obj	4ac5e519a01a5a26
-1839	3630	7467211768955175	Texture_projection.exe	5056074df0dae833
+2	653	7528299670482387	CMakeFiles/Texture_projection.dir/main.cpp.obj	53fc314f6b21900c
+878	1695	7528296058491977	Texture_projection.exe	d0f209eec2e38385
+18	967	7528259542057425	CMakeFiles/Texture_projection.dir/glad.c.obj	a2fe68e92d172402
+20	1072	7528295122048580	IMGUI/CMakeFiles/imgui.dir/imgui_widgets.cpp.obj	61f3cc42aeadae8c
+113	898	7528295119615098	IMGUI/CMakeFiles/imgui.dir/imgui_tables.cpp.obj	e583a171b743fdb8
+95	900	7528295120253385	IMGUI/CMakeFiles/imgui.dir/imgui_impl_opengl3.cpp.obj	1a4471bf18e42885
+58	896	7528295119854463	IMGUI/CMakeFiles/imgui.dir/imgui_demo.cpp.obj	5a0c96c95b2c2d2f
+1	923	7528295120442883	IMGUI/CMakeFiles/imgui.dir/imgui_draw.cpp.obj	d72f196af4021d1
+38	1454	7528295125878355	IMGUI/CMakeFiles/imgui.dir/imgui.cpp.obj	a76a29720afd39ac
+77	1249	7528295123813862	IMGUI/CMakeFiles/imgui.dir/imgui_impl_glfw.cpp.obj	f242b034ff586710
+1454	2007	7528295129115107	IMGUI/imgui.lib	55cd43e43cccc834
+2	1001	7528304627829653	Texture_projection.exe	526bbff9214f0aec
