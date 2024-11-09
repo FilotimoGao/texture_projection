@@ -1,13 +1,15 @@
 # ninja log v5
-2	653	7528299670482387	CMakeFiles/Texture_projection.dir/main.cpp.obj	53fc314f6b21900c
-878	1695	7528296058491977	Texture_projection.exe	d0f209eec2e38385
-18	967	7528259542057425	CMakeFiles/Texture_projection.dir/glad.c.obj	a2fe68e92d172402
-20	1072	7528295122048580	IMGUI/CMakeFiles/imgui.dir/imgui_widgets.cpp.obj	61f3cc42aeadae8c
-113	898	7528295119615098	IMGUI/CMakeFiles/imgui.dir/imgui_tables.cpp.obj	e583a171b743fdb8
-95	900	7528295120253385	IMGUI/CMakeFiles/imgui.dir/imgui_impl_opengl3.cpp.obj	1a4471bf18e42885
-58	896	7528295119854463	IMGUI/CMakeFiles/imgui.dir/imgui_demo.cpp.obj	5a0c96c95b2c2d2f
-1	923	7528295120442883	IMGUI/CMakeFiles/imgui.dir/imgui_draw.cpp.obj	d72f196af4021d1
-38	1454	7528295125878355	IMGUI/CMakeFiles/imgui.dir/imgui.cpp.obj	a76a29720afd39ac
-77	1249	7528295123813862	IMGUI/CMakeFiles/imgui.dir/imgui_impl_glfw.cpp.obj	f242b034ff586710
-1454	2007	7528295129115107	IMGUI/imgui.lib	55cd43e43cccc834
-2	1001	7528304627829653	Texture_projection.exe	526bbff9214f0aec
+144	1133	7528632880055171	IMGUI/CMakeFiles/imgui.dir/imgui_demo.cpp.obj	5a0c96c95b2c2d2f
+164	1187	7528632880375281	IMGUI/CMakeFiles/imgui.dir/imgui_tables.cpp.obj	e583a171b743fdb8
+127	1302	7528632881574925	IMGUI/CMakeFiles/imgui.dir/imgui_draw.cpp.obj	d72f196af4021d1
+92	1468	7528632883575004	IMGUI/CMakeFiles/imgui.dir/imgui_impl_opengl3.cpp.obj	1a4471bf18e42885
+2	1676	7528632885707055	CMakeFiles/Texture_projection.dir/glad.c.obj	a2fe68e92d172402
+21	1712	7528632886107432	CMakeFiles/Texture_projection.dir/main.cpp.obj	53fc314f6b21900c
+56	1793	7528632886906498	Application/CMakeFiles/app.dir/Application.cpp.obj	c4bdd7d9b9934e0b
+109	1879	7528632887706487	IMGUI/CMakeFiles/imgui.dir/imgui_impl_glfw.cpp.obj	f242b034ff586710
+1136	2107	7528632889806688	IMGUI/CMakeFiles/imgui.dir/imgui_widgets.cpp.obj	61f3cc42aeadae8c
+74	2151	7528632890526121	IMGUI/CMakeFiles/imgui.dir/imgui.cpp.obj	a76a29720afd39ac
+20	345	7528633212602688	IMGUI/imgui.lib	55cd43e43cccc834
+2	714	7528633218477568	Application/CMakeFiles/app.dir/Texture.cpp.obj	a837b1ab07d6920e
+715	939	7528633219368142	Application/app.lib	491faa1014646624
+939	2439	7528633234409853	Texture_projection.exe	ecd8eab5c133c63b

@@ -1,11 +1,10 @@
 {
   "ExpandedNodes": [
     "",
-    "\\thirdParty",
-    "\\thirdParty\\include",
-    "\\thirdParty\\include\\GLFW",
-    "\\thirdParty\\lib"
+    "\\application",
+    "\\images",
+    "\\thirdParty\\include\\STBIMAGE"
   ],
-  "SelectedNode": "\\thirdParty\\include\\IMGUI",
+  "SelectedNode": "\\README.md",
   "PreviewInSolutionExplorer": false
 }

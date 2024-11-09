@@ -50,16 +50,16 @@ The CXX compiler identification is MSVC, found in "D:/CG/Texture_projection/out/
 Detecting C compiler ABI info compiled with the following output:
 Change Dir: D:/CG/Texture_projection/out/build/x64-Debug/CMakeFiles/CMakeTmp
 
-Run Build Command(s):C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe cmTC_27897 && [1/2] Building C object CMakeFiles\cmTC_27897.dir\CMakeCCompilerABI.c.obj
-[2/2] Linking C executable cmTC_27897.exe
+Run Build Command(s):C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe cmTC_5edb5 && [1/2] Building C object CMakeFiles\cmTC_5edb5.dir\CMakeCCompilerABI.c.obj
+[2/2] Linking C executable cmTC_5edb5.exe
 
 
 
 Detecting CXX compiler ABI info compiled with the following output:
 Change Dir: D:/CG/Texture_projection/out/build/x64-Debug/CMakeFiles/CMakeTmp
 
-Run Build Command(s):C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe cmTC_fa526 && [1/2] Building CXX object CMakeFiles\cmTC_fa526.dir\CMakeCXXCompilerABI.cpp.obj
-[2/2] Linking CXX executable cmTC_fa526.exe
+Run Build Command(s):C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe cmTC_efd08 && [1/2] Building CXX object CMakeFiles\cmTC_efd08.dir\CMakeCXXCompilerABI.cpp.obj
+[2/2] Linking CXX executable cmTC_efd08.exe
 
 
 
