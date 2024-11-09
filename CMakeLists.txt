@@ -7,6 +7,7 @@ project(Texture_projection)
 #本工程支持的C++版本
 set(CMAKE_CXX_STANDARD 17)
 
+add_subdirectory(Application)
 add_subdirectory(IMGUI)
 
 include_directories(
@@ -25,4 +26,4 @@ set(
 )
 add_executable(Texture_projection ${SRCS})
 
-target_link_libraries(Texture_projection glfw3.lib imgui)
+target_link_libraries(Texture_projection glfw3.lib imgui app)
