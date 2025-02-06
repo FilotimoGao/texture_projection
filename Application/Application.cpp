@@ -1,6 +1,8 @@
 #include "Application.h"
 #include<vector>
 
+int model_num = 0;
+
 // 窗口大小调整回调
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
@@ -59,23 +61,6 @@ bool Application::init(const int& width, const int& height) {
     ImGui_ImplGlfw_InitForOpenGL(appWindow, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
-    // 初始化平面顶点数据
-    std::vector<float> vertices;
-    std::vector<unsigned int> indices;
-    vertices = {
-        // 位置          // 纹理坐标
-        -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-         0.5f, -0.5f, -0.5f, 1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-        -0.5f,  0.5f, -0.5f, 0.0f, 1.0f
-    };
-    indices = {
-        0, 1, 2,
-        2, 3, 0
-    };
-
-    scene.addMesh(vertices, indices);
-
     // 加载着色器
     if (!loadShaders()) {
         return false;
@@ -86,6 +71,9 @@ bool Application::init(const int& width, const int& height) {
 
 
 void Application::update() {
+    IGFD::FileDialogConfig config;
+    config.countSelectionMax = 20; // 设置多选
+
     while (!glfwWindowShouldClose(appWindow)) {
         // 开始 ImGui 帧
         ImGui_ImplOpenGL3_NewFrame();
@@ -94,64 +82,207 @@ void Application::update() {
 
         // 控制面板
         ImGui::Begin("Control Panel");
-        ImGui::InputText("Image Path", &imagePath[0], imagePath.size());
-        if (ImGui::Button("Load Image")) {
-            textureID = loadTexture(imagePath.c_str());
+
+        // 显示所有模型，并支持选择
+        for (size_t i = 0; i < model_num; ++i) {
+            char label[32];
+            sprintf(label, "Model %d", (int)i);
+            if (ImGui::Selectable(label, scene.getSelectedModelIndex() == (int)i)) {
+                scene.setSelectedModelIndex((int)i);
+            }
         }
-        ImGui::InputFloat3("Position", &plane.position[0]);
-        ImGui::InputFloat3("Rotation", &plane.rotation[0]);
-        ImGui::InputFloat2("Size", &plane.size[0]);
+
+        // 如果有选中的模型，显示控制面板
+        int selectedIndex = scene.getSelectedModelIndex();
+        if (selectedIndex >= 0) {
+            Model* selectedModel = scene.getModel(selectedIndex);
+            Transform& transform = selectedModel->getTransform();
+
+            // ---- 1. 变换控制 ----
+            ImGui::Text("Transform Controls:");
+            ImGui::InputFloat3("Position", &transform.position[0]);
+            ImGui::InputFloat3("Rotation", &transform.rotation[0]);
+            ImGui::InputFloat2("Size", &transform.size[0]);
+
+            // 更新模型矩阵
+            selectedModel->setTransform(transform);
+
+            // ---- 2. 纹理模式控制 ----
+            ImGui::Separator(); // 添加分隔线，区分变换控制和纹理模式控制
+            ImGui::Text("Texture Mode Controls:");
+
+            // 当前模型的纹理模式
+            static int currentMode = 0;
+            if (selectedModel->getTextureMode() == TextureMode::UV_MAPPING) {
+                currentMode = 0;
+            }
+            else {
+                currentMode = 1;
+            }
+
+            // 纹理模式单选按钮
+            ImGui::RadioButton("UV Mapping", &currentMode, 0);
+            ImGui::RadioButton("Projection Mapping", &currentMode, 1);
+
+            // 更新模型的纹理模式
+            if (currentMode == 0) {
+                selectedModel->setTextureMode(TextureMode::UV_MAPPING);
+            }
+            else {
+                selectedModel->setTextureMode(TextureMode::PROJECTION_MAPPING);
+            }
+
+            // ---- 3. 更改模型纹理 ----
+            ImGui::Separator(); // 添加分隔线，区分纹理模式和纹理选择
+            ImGui::Text("Texture Controls:");
+
+            // 设置默认纹理
+            if (ImGui::Button("Set Default Texture")) {
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "ChooseDefaultTexture",  // 对话框唯一标识符
+                    "Choose Texture", // 对话框标题
+                    ".png,.jpg,.jpeg",         // 可以忽略 vFilters（使用 config.filters）
+                    config           // 使用配置
+                );
+            }
+            if (ImGuiFileDialog::Instance()->Display("ChooseDefaultTexture")) {
+                if (ImGuiFileDialog::Instance()->IsOk()) {
+                    std::string texturePath = ImGuiFileDialog::Instance()->GetFilePathName();
+                    unsigned int newTexture = loadTexture(texturePath.c_str());
+                    selectedModel->setTexture(newTexture); // 设置默认纹理
+                }
+                ImGuiFileDialog::Instance()->Close();
+            }
+
+            // 如果当前模式是投影纹理，则允许设置投影纹理
+            if (currentMode == 1) { // 仅在投影模式下显示设置投影纹理按钮
+                if (ImGui::Button("Set Projection Texture")) {
+                    ImGuiFileDialog::Instance()->OpenDialog(
+                        "ChooseProjectionTexture",  // 对话框唯一标识符
+                        "Choose Texture", // 对话框标题
+                        ".png,.jpg,.jpeg",         // 可以忽略 vFilters（使用 config.filters）
+                        config           // 使用配置
+                    );
+                }
+                if (ImGuiFileDialog::Instance()->Display("ChooseProjectionTexture")) {
+                    if (ImGuiFileDialog::Instance()->IsOk()) {
+                        std::string projectionTexturePath = ImGuiFileDialog::Instance()->GetFilePathName();
+                        unsigned int newProjectionTexture = loadTexture(projectionTexturePath.c_str());
+                        selectedModel->setProjectionTexture(newProjectionTexture); // 设置投影纹理
+                    }
+                    ImGuiFileDialog::Instance()->Close();
+                }
+            }
+        }
+
+        // 文件选择和加载
+        if (ImGui::Button("Select Images")) {
+            IGFD::FileDialogConfig config;
+            config.countSelectionMax = 20; // 设置多选
+            ImGuiFileDialog::Instance()->OpenDialog(
+                "ChooseImages",  // 对话框唯一标识符
+                "Choose Images", // 对话框标题
+                ".png,.jpg,.jpeg",         // 可以忽略 vFilters（使用 config.filters）
+                config           // 使用配置
+            );
+        }
+
+        // 加载选中的图片并生成模型
+        if (ImGuiFileDialog::Instance()->Display("ChooseImages")) {
+            if (ImGuiFileDialog::Instance()->IsOk()) {
+                auto selectedFiles = ImGuiFileDialog::Instance()->GetSelection();
+                scene.clear();
+                model_num = 0;
+
+                for (auto& [key, filePath] : selectedFiles) {
+                    std::vector<float> vertices = {
+                        -0.5f, -0.5f, -0.5f * (model_num + 1), 0.0f, 0.0f,
+                         0.5f, -0.5f, -0.5f * (model_num + 1), 1.0f, 0.0f,
+                         0.5f,  0.5f, -0.5f * (model_num + 1), 1.0f, 1.0f,
+                        -0.5f,  0.5f, -0.5f * (model_num + 1), 0.0f, 1.0f
+                    };
+                    std::vector<unsigned int> indices = {
+                        0, 1, 2,
+                        2, 3, 0
+                    };
+
+                    // 加载默认纹理
+                    unsigned int texture = loadTexture("path/to/default_texture.png");
+
+                    // 加载投影纹理
+                    unsigned int projectionTexture = loadTexture(filePath.c_str());
+
+                    // 创建模型并设置属性
+                    scene.addModel(vertices, indices);
+                    scene.setModelTexture(model_num, texture);
+
+                    Model* model = scene.getModel(model_num);
+                    model->setProjectionTexture(projectionTexture);
+                    model->setProjectionMatrix(glm::mat4(1.0f)); // 默认投影矩阵
+                    model->setTextureMode(TextureMode::UV_MAPPING); // 默认使用 UV 映射
+
+                    model_num++;
+                }
+            }
+            ImGuiFileDialog::Instance()->Close();
+        }
+
         ImGui::End();
 
-        // 计算模型矩阵
-        planeModelMatrix = glm::mat4(1.0f);
-        planeModelMatrix = glm::translate(planeModelMatrix, plane.position);
-        planeModelMatrix = glm::rotate(planeModelMatrix, glm::radians(plane.rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
-        planeModelMatrix = glm::rotate(planeModelMatrix, glm::radians(plane.rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
-        planeModelMatrix = glm::rotate(planeModelMatrix, glm::radians(plane.rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
-        planeModelMatrix = glm::scale(planeModelMatrix, glm::vec3(plane.size, 1.0f));
-
-        glEnable(GL_DEPTH_TEST);
+        // 渲染场景
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glUseProgram(shaderProgram);
 
-        // 渲染平面
-        if (textureID > 0) {
-            ImGui::Begin("Image Display"); // 图片展示区
-            ImGui::Text("Image Loaded:");
-            ImGui::Image((ImTextureID)(intptr_t)textureID, ImVec2(400, 300)); // 展示图片
-            ImGui::End();
+        // 设置视图和投影矩阵
+        glm::mat4 view = glm::lookAt(
+            glm::vec3(0.0f, 0.0f, 3.0f), 
+            glm::vec3(0.0f, 0.0f, 0.0f), 
+            glm::vec3(0.0f, 1.0f, 0.0f)
+        );
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)appWidth / (float)appHeight, 0.1f, 100.0f);
 
-            glUseProgram(shaderProgram);
+        // 投影矩阵，用于模拟投影仪的位置和方向
+        glm::mat4 lightProjection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+        glm::mat4 lightView = glm::lookAt(
+            glm::vec3(0.0f, 0.0f, 3.0f),  // 投影仪的位置（光源位置）
+            glm::vec3(0.0f, 0.0f, 0.0f),  // 投影仪的目标点
+            glm::vec3(0.0f, 1.0f, 0.0f)   // 投影仪的上方向
+        );
+        glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
-            glm::mat4 view = glm::lookAt(
-                glm::vec3(0.0f, 0.0f, 3.0f),  // 摄像机位置
-                glm::vec3(0.0f, 0.0f, 0.0f),  // 目标位置
-                glm::vec3(0.0f, 1.0f, 0.0f)   // 上方向
-            );
-            glm::mat4 projection = glm::perspective(
-                glm::radians(45.0f),          // FOV
-                (float)appWidth / (float)appHeight, // 屏幕宽高比
-                0.1f, 100.0f                  // 近远平面
-            );
+        // 上传矩阵到着色器
+        GLuint viewLoc = glGetUniformLocation(shaderProgram, "view");
+        GLuint projLoc = glGetUniformLocation(shaderProgram, "projection");
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
-            // 上传到着色器
-            GLuint viewLoc = glGetUniformLocation(shaderProgram, "view");
-            GLuint projLoc = glGetUniformLocation(shaderProgram, "projection");
+
+        // ---- 渲染每个模型 ----
+        for (int i = 0; i < model_num; ++i) {
+            Model* model = scene.getModel(i);
+
+            // 获取模型的变换矩阵
+            glm::mat4 modelMatrix = model->getModelMatrix();
+
+            // 上传模型矩阵到着色器
             GLuint modelLoc = glGetUniformLocation(shaderProgram, "model");
-            glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-            glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(planeModelMatrix));
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
 
-            glActiveTexture(GL_TEXTURE0); // 激活纹理单元 0
-            glBindTexture(GL_TEXTURE_2D, textureID);
-            glUniform1i(glGetUniformLocation(shaderProgram, "texture1"), 0); // 绑定到纹理单元 0
-            scene.render();
+            // 上传投影仪的视图矩阵到着色器
+            GLuint lightViewLoc = glGetUniformLocation(shaderProgram, "lightView");
+            glUniformMatrix4fv(lightViewLoc, 1, GL_FALSE, glm::value_ptr(lightView));
+
+            // 上传投影仪的投影矩阵到着色器
+            GLuint lightProjectionLoc = glGetUniformLocation(shaderProgram, "lightProjection");
+            glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(lightProjection));
+
+            // 渲染模型
+            model->Draw(shaderProgram);
         }
 
         // 渲染 ImGui
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
         glfwSwapBuffers(appWindow);
         glfwPollEvents();
     }
@@ -159,12 +290,6 @@ void Application::update() {
 
 
 void Application::destory() {
-    // 释放纹理资源
-    if (textureID > 0) {
-        glDeleteTextures(1, &textureID);
-        textureID = 0;
-    }
-
     // 清理场景资源
     scene.clear();
 
@@ -187,29 +312,49 @@ bool Application::loadShaders() {
     layout (location = 1) in vec2 aTexCoords;
 
     out vec2 TexCoords;
+    out vec4 ProjectedCoords;
 
     uniform mat4 model;
     uniform mat4 view;
     uniform mat4 projection;
+    uniform mat4 lightProjection;
+    uniform mat4 lightView;
 
     void main() {
         gl_Position = projection * view * model * vec4(aPos, 1.0);
         TexCoords = aTexCoords;
+        ProjectedCoords = lightProjection * lightView * model * vec4(aPos, 1.0);
     }
 )";
 
     // 片段着色器代码
     const char* fragmentShaderSource = R"(
-        #version 330 core
-        out vec4 FragColor;
+    #version 330 core
+    in vec2 TexCoords;
+    in vec4 ProjectedCoords;
 
-        in vec2 TexCoords;
+    uniform sampler2D texture1;         // 默认纹理
+    uniform sampler2D projectionTexture; // 投影纹理
+    uniform int textureMode;            // 纹理模式 (0: UV 映射, 1: 投影映射)
 
-        uniform sampler2D texture1;
+    out vec4 FragColor;
 
-        void main() {
+    void main() {
+        if (textureMode == 0) { // UV 映射
             FragColor = texture(texture1, TexCoords);
+        } else { // 投影映射
+            // 将投影坐标从裁剪空间转换到纹理坐标
+            vec3 projCoords = ProjectedCoords.xyz / ProjectedCoords.w;
+            projCoords = projCoords * 0.5 + 0.5; // [-1, 1] 转换到 [0, 1]
+
+            // 检查是否在投影纹理范围内
+            if (projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0) {
+                FragColor = vec4(0.0, 0.0, 0.0, 1.0); // 超出范围返回黑色
+            } else {
+                FragColor = texture(projectionTexture, projCoords.xy);
+            }
         }
+    }
     )";
 
     // 编译顶点着色器
@@ -260,14 +405,7 @@ bool Application::loadShaders() {
 
 
 Application::Application()
-    : appWidth(0), appHeight(0), appWindow(nullptr), plane({}) 
-{
-    imagePath = std::string(256, '\0');
-
-    plane.position = glm::vec3(0.0f);
-    plane.rotation = glm::vec3(0.0f);
-    plane.size = glm::vec2(1.0f);
-}
+    : appWidth(0), appHeight(0), appWindow(nullptr), shaderProgram(0) {}
 
 Application::~Application() {
     releaseInstance();

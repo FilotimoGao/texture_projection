@@ -10,6 +10,7 @@
 #include <IMGUI/imgui.h>
 #include <IMGUI/imgui_impl_glfw.h>
 #include <IMGUI/imgui_impl_opengl3.h>
+#include <IMGUI/ImGuiFileDialog.h>
 
 #define app Application::getInstance()
 
@@ -31,14 +32,8 @@ private:
     uint32_t appHeight;
     GLFWwindow* appWindow;
 
-    Plane plane;
     Scene scene;
-    //GLuint planeVAO = 0, planeVBO = 0, planeEBO = 0;
     GLuint shaderProgram; // ×ÅÉ«Æ÷³ÌÐò
-    GLuint textureID = 0;
-    glm::mat4 planeModelMatrix;
-
-    std::string imagePath;
 
     bool loadShaders();
 };
