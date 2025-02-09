@@ -28,6 +28,7 @@ bool Application::init(const int& width, const int& height) {
     // 初始化窗口大小并记录
     appWidth = width;
     appHeight = height;
+    selectedModelIndices.clear();
 
     // 初始化 GLFW
     if (!glfwInit()) {
@@ -50,6 +51,33 @@ bool Application::init(const int& width, const int& height) {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return false;
     }
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_DEPTH_TEST); // 确保深度测试开启
+
+    // 设置鼠标移动和滚轮回调
+    glfwSetCursorPosCallback(appWindow, [](GLFWwindow* window, double xpos, double ypos) {
+        Application::getInstance()->mouse_callback(xpos, ypos);
+        });
+    glfwSetScrollCallback(appWindow, [](GLFWwindow* window, double xoffset, double yoffset) {
+        Application::getInstance()->scroll_callback(yoffset);
+        });
+
+    // 捕获鼠标
+    glfwSetInputMode(appWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+
+    // 设置鼠标按下/释放的回调
+    glfwSetMouseButtonCallback(appWindow, [](GLFWwindow* window, int button, int action, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            if (action == GLFW_PRESS) {
+                Application::getInstance()->onMousePress(true); // 鼠标按下
+            }
+            else if (action == GLFW_RELEASE) {
+                Application::getInstance()->onMousePress(false); // 鼠标释放
+            }
+        }
+        });
 
     // 设置 ImGui
     IMGUI_CHECKVERSION();
@@ -75,6 +103,14 @@ void Application::update() {
     config.countSelectionMax = 20; // 设置多选
 
     while (!glfwWindowShouldClose(appWindow)) {
+        // 每帧时间逻辑
+        float currentFrame = glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        // 处理输入
+        processInput();
+
         // 开始 ImGui 帧
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -83,92 +119,119 @@ void Application::update() {
         // 控制面板
         ImGui::Begin("Control Panel");
 
-        // 显示所有模型，并支持选择
+        // 显示所有模型，并支持多选
         for (size_t i = 0; i < model_num; ++i) {
             char label[32];
             sprintf(label, "Model %d", (int)i);
-            if (ImGui::Selectable(label, scene.getSelectedModelIndex() == (int)i)) {
-                scene.setSelectedModelIndex((int)i);
+
+            // 检查当前模型是否已被选中
+            bool isSelected = std::find(selectedModelIndices.begin(), selectedModelIndices.end(), i) != selectedModelIndices.end();
+
+            // ImGui 的选择逻辑
+            if (ImGui::Selectable(label, isSelected)) {
+                if (ImGui::GetIO().KeyCtrl) { // 按住 Ctrl 支持多选
+                    if (isSelected) {
+                        // 如果已选择，则取消选择
+                        selectedModelIndices.erase(std::remove(selectedModelIndices.begin(), selectedModelIndices.end(), i), selectedModelIndices.end());
+                    }
+                    else {
+                        // 未选择则添加到多选列表
+                        selectedModelIndices.push_back(i);
+                    }
+                }
+                else {
+                    // 未按住 Ctrl 时，清空其他选择，仅选择当前模型
+                    selectedModelIndices.clear();
+                    selectedModelIndices.push_back(i);
+                }
             }
         }
 
-        // 如果有选中的模型，显示控制面板
-        int selectedIndex = scene.getSelectedModelIndex();
-        if (selectedIndex >= 0) {
-            Model* selectedModel = scene.getModel(selectedIndex);
-            Transform& transform = selectedModel->getTransform();
+        // 如果有选中的模型，显示批量控制面板
+        if (!selectedModelIndices.empty()) {
+            ImGui::Separator(); // 分隔线
+            ImGui::Text("Batch Transform and Texture Controls:");
 
-            // ---- 1. 变换控制 ----
-            ImGui::Text("Transform Controls:");
-            ImGui::InputFloat3("Position", &transform.position[0]);
-            ImGui::InputFloat3("Rotation", &transform.rotation[0]);
-            ImGui::InputFloat2("Size", &transform.size[0]);
+            // ---- 1. 批量修改 Transform ----
+            static glm::vec3 batchPosition(0.0f);
+            static glm::vec3 batchRotation(0.0f);
+            static glm::vec2 batchSize(1.0f);
 
-            // 更新模型矩阵
-            selectedModel->setTransform(transform);
+            if (ImGui::CollapsingHeader("Transform")) {
+                ImGui::InputFloat3("Batch Position", &batchPosition[0]);
+                ImGui::InputFloat3("Batch Rotation", &batchRotation[0]);
+                ImGui::InputFloat2("Batch Size", &batchSize[0]);
 
-            // ---- 2. 纹理模式控制 ----
-            ImGui::Separator(); // 添加分隔线，区分变换控制和纹理模式控制
-            ImGui::Text("Texture Mode Controls:");
-
-            // 当前模型的纹理模式
-            static int currentMode = 0;
-            if (selectedModel->getTextureMode() == TextureMode::UV_MAPPING) {
-                currentMode = 0;
-            }
-            else {
-                currentMode = 1;
-            }
-
-            // 纹理模式单选按钮
-            ImGui::RadioButton("UV Mapping", &currentMode, 0);
-            ImGui::RadioButton("Projection Mapping", &currentMode, 1);
-
-            // 更新模型的纹理模式
-            if (currentMode == 0) {
-                selectedModel->setTextureMode(TextureMode::UV_MAPPING);
-            }
-            else {
-                selectedModel->setTextureMode(TextureMode::PROJECTION_MAPPING);
-            }
-
-            // ---- 3. 更改模型纹理 ----
-            ImGui::Separator(); // 添加分隔线，区分纹理模式和纹理选择
-            ImGui::Text("Texture Controls:");
-
-            // 设置默认纹理
-            if (ImGui::Button("Set Default Texture")) {
-                ImGuiFileDialog::Instance()->OpenDialog(
-                    "ChooseDefaultTexture",  // 对话框唯一标识符
-                    "Choose Texture", // 对话框标题
-                    ".png,.jpg,.jpeg",         // 可以忽略 vFilters（使用 config.filters）
-                    config           // 使用配置
-                );
-            }
-            if (ImGuiFileDialog::Instance()->Display("ChooseDefaultTexture")) {
-                if (ImGuiFileDialog::Instance()->IsOk()) {
-                    std::string texturePath = ImGuiFileDialog::Instance()->GetFilePathName();
-                    unsigned int newTexture = loadTexture(texturePath.c_str());
-                    selectedModel->setTexture(newTexture); // 设置默认纹理
+                if (ImGui::Button("Apply Transform")) {
+                    for (int index : selectedModelIndices) {
+                        Model* model = scene.getModel(index);
+                        if (model) {
+                            Transform transform = model->getTransform();
+                            transform.position = batchPosition;
+                            transform.rotation = batchRotation;
+                            transform.size = batchSize;
+                            model->setTransform(transform);
+                        }
+                    }
                 }
-                ImGuiFileDialog::Instance()->Close();
             }
 
-            // 如果当前模式是投影纹理，则允许设置投影纹理
-            if (currentMode == 1) { // 仅在投影模式下显示设置投影纹理按钮
-                if (ImGui::Button("Set Projection Texture")) {
+            // ---- 2. 批量修改纹理 ----
+            static unsigned int batchDefaultTexture = 0;
+            static unsigned int batchProjectionTexture = 0;
+            static int currentTextureMode = 0; // 0: UV Mapping, 1: Projection Mapping
+
+            if (ImGui::CollapsingHeader("Texture")) {
+                ImGui::Text("Texture Mode:");
+                ImGui::RadioButton("UV Mapping", &currentTextureMode, 0);
+                ImGui::RadioButton("Projection Mapping", &currentTextureMode, 1);
+
+                if (currentTextureMode == 0) {
+                    ImGui::Text("Set Default Texture for Selected:");
+                }
+                else {
+                    ImGui::Text("Set Projection Texture for Selected:");
+                }
+
+                if (ImGui::Button("Apply Texture Mode")) {
+                    for (int index : selectedModelIndices) {
+                        Model* model = scene.getModel(index);
+                        if (model) {
+                            if (currentTextureMode == 0) {
+                                model->setTextureMode(TextureMode::UV_MAPPING);
+                            }
+                            else {
+                                model->setTextureMode(TextureMode::PROJECTION_MAPPING);
+                            }
+                        }
+                    }
+                }
+
+                ImGui::Separator(); // 分隔线
+                if (ImGui::Button("Choose Texture")) {
                     ImGuiFileDialog::Instance()->OpenDialog(
-                        "ChooseProjectionTexture",  // 对话框唯一标识符
-                        "Choose Texture", // 对话框标题
-                        ".png,.jpg,.jpeg",         // 可以忽略 vFilters（使用 config.filters）
-                        config           // 使用配置
+                        "ChooseBatchTexture",
+                        "Choose Texture",
+                        ".png,.jpg,.jpeg",
+                        config
                     );
                 }
-                if (ImGuiFileDialog::Instance()->Display("ChooseProjectionTexture")) {
+
+                if (ImGuiFileDialog::Instance()->Display("ChooseBatchTexture")) {
                     if (ImGuiFileDialog::Instance()->IsOk()) {
-                        std::string projectionTexturePath = ImGuiFileDialog::Instance()->GetFilePathName();
-                        unsigned int newProjectionTexture = loadTexture(projectionTexturePath.c_str());
-                        selectedModel->setProjectionTexture(newProjectionTexture); // 设置投影纹理
+                        std::string texturePath = ImGuiFileDialog::Instance()->GetFilePathName();
+                        unsigned int newTexture = loadTexture(texturePath.c_str());
+                        batchDefaultTexture = newTexture;
+                        batchProjectionTexture = newTexture;
+
+                        // 应用纹理到所有被选中的模型
+                        for (int index : selectedModelIndices) {
+                            Model* model = scene.getModel(index);
+                            if (model) {
+                                model->setTexture(batchDefaultTexture);
+                                model->setProjectionTexture(batchProjectionTexture);
+                            }
+                        }
                     }
                     ImGuiFileDialog::Instance()->Close();
                 }
@@ -196,27 +259,25 @@ void Application::update() {
 
                 for (auto& [key, filePath] : selectedFiles) {
                     std::vector<float> vertices = {
-                        -0.5f, -0.5f, -0.5f * (model_num + 1), 0.0f, 0.0f,
-                         0.5f, -0.5f, -0.5f * (model_num + 1), 1.0f, 0.0f,
-                         0.5f,  0.5f, -0.5f * (model_num + 1), 1.0f, 1.0f,
-                        -0.5f,  0.5f, -0.5f * (model_num + 1), 0.0f, 1.0f
+                        -0.5f, -0.5f, -0.2f * (model_num + 1), 0.0f, 0.0f,
+                         0.5f, -0.5f, -0.2f * (model_num + 1), 1.0f, 0.0f,
+                         0.5f,  0.5f, -0.2f * (model_num + 1), 1.0f, 1.0f,
+                        -0.5f,  0.5f, -0.2f * (model_num + 1), 0.0f, 1.0f
                     };
                     std::vector<unsigned int> indices = {
                         0, 1, 2,
                         2, 3, 0
                     };
 
-                    // 加载默认纹理
-                    unsigned int texture = loadTexture("path/to/default_texture.png");
-
-                    // 加载投影纹理
+                    // 为每个模型加载独立的纹理
+                    unsigned int texture = loadTexture(filePath.c_str());
                     unsigned int projectionTexture = loadTexture(filePath.c_str());
 
-                    // 创建模型并设置属性
+                    // 创建模型并为其设置独立的纹理和投影纹理
                     scene.addModel(vertices, indices);
-                    scene.setModelTexture(model_num, texture);
 
                     Model* model = scene.getModel(model_num);
+                    model->setTexture(texture);
                     model->setProjectionTexture(projectionTexture);
                     model->setProjectionMatrix(glm::mat4(1.0f)); // 默认投影矩阵
                     model->setTextureMode(TextureMode::UV_MAPPING); // 默认使用 UV 映射
@@ -234,12 +295,13 @@ void Application::update() {
         glUseProgram(shaderProgram);
 
         // 设置视图和投影矩阵
-        glm::mat4 view = glm::lookAt(
-            glm::vec3(0.0f, 0.0f, 3.0f), 
-            glm::vec3(0.0f, 0.0f, 0.0f), 
-            glm::vec3(0.0f, 1.0f, 0.0f)
+        glm::mat4 view = camera.GetViewMatrix(); // 使用相机类生成视图矩阵
+        glm::mat4 projection = glm::perspective(
+            glm::radians(camera.Zoom),
+            (float)appWidth / (float)appHeight,
+            0.1f,
+            100.0f
         );
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)appWidth / (float)appHeight, 0.1f, 100.0f);
 
         // 投影矩阵，用于模拟投影仪的位置和方向
         glm::mat4 lightProjection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
@@ -255,7 +317,6 @@ void Application::update() {
         GLuint projLoc = glGetUniformLocation(shaderProgram, "projection");
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-
 
         // ---- 渲染每个模型 ----
         for (int i = 0; i < model_num; ++i) {
@@ -287,6 +348,7 @@ void Application::update() {
         glfwPollEvents();
     }
 }
+
 
 
 void Application::destory() {
@@ -340,20 +402,27 @@ bool Application::loadShaders() {
     out vec4 FragColor;
 
     void main() {
+        vec4 texColor;
+
         if (textureMode == 0) { // UV 映射
-            FragColor = texture(texture1, TexCoords);
+            texColor = texture(texture1, TexCoords);
         } else { // 投影映射
-            // 将投影坐标从裁剪空间转换到纹理坐标
             vec3 projCoords = ProjectedCoords.xyz / ProjectedCoords.w;
             projCoords = projCoords * 0.5 + 0.5; // [-1, 1] 转换到 [0, 1]
 
-            // 检查是否在投影纹理范围内
             if (projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0) {
-                FragColor = vec4(0.0, 0.0, 0.0, 1.0); // 超出范围返回黑色
+                texColor = vec4(0.0, 0.0, 0.0, 0.0); // 超出范围返回完全透明
             } else {
-                FragColor = texture(projectionTexture, projCoords.xy);
+                texColor = texture(projectionTexture, projCoords.xy);
             }
         }
+
+        // 丢弃透明片段
+        if (texColor.a < 0.1) {
+            discard; // 透明部分丢弃，不渲染
+        }
+
+        FragColor = texColor; // 使用纹理颜色和透明度
     }
     )";
 
@@ -405,8 +474,55 @@ bool Application::loadShaders() {
 
 
 Application::Application()
-    : appWidth(0), appHeight(0), appWindow(nullptr), shaderProgram(0) {}
+    : appWidth(0), appHeight(0), appWindow(nullptr), shaderProgram(0),
+    camera(glm::vec3(0.0f, 0.0f, 3.0f)), // 初始化相机，默认位置为 (0, 0, 3)
+    lastX(400.0f), lastY(300.0f), firstMouse(true),
+    deltaTime(0.0f), lastFrame(0.0f), isMousePressed(false) {}
 
 Application::~Application() {
     releaseInstance();
+}
+
+void Application::processInput() {
+    if (glfwGetKey(appWindow, GLFW_KEY_W) == GLFW_PRESS)
+        camera.ProcessKeyboard("FORWARD", deltaTime);
+    if (glfwGetKey(appWindow, GLFW_KEY_S) == GLFW_PRESS)
+        camera.ProcessKeyboard("BACKWARD", deltaTime);
+    if (glfwGetKey(appWindow, GLFW_KEY_A) == GLFW_PRESS)
+        camera.ProcessKeyboard("LEFT", deltaTime);
+    if (glfwGetKey(appWindow, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard("RIGHT", deltaTime);
+}
+
+void Application::onMousePress(bool pressed) {
+    isMousePressed = pressed;
+
+    if (pressed) {
+        // 获取鼠标当前位置，初始化 lastX 和 lastY
+        double xpos, ypos;
+        glfwGetCursorPos(appWindow, &xpos, &ypos);
+        lastX = xpos;
+        lastY = ypos;
+    }
+}
+
+// 处理鼠标移动
+void Application::mouse_callback(double xpos, double ypos) {
+    if (!isMousePressed) {
+        // 如果鼠标没有按下，直接返回
+        return;
+    }
+
+    float xOffset = xpos - lastX;
+    float yOffset = lastY - ypos; // 注意 y 是反向的，因为窗口坐标系与 OpenGL 坐标系不同
+
+    lastX = xpos;
+    lastY = ypos;
+
+    camera.ProcessMouseMovement(xOffset, yOffset);
+}
+
+// 处理鼠标滚动
+void Application::scroll_callback(double yoffset) {
+    camera.ProcessMouseScroll(yoffset);
 }
