@@ -1,19 +1,21 @@
-# 忽略 .vs 文件夹和临时文件
+# 忽略 Visual Studio 临时文件和文件夹
 .vs/
 *.ipch
 *.db
 *.opendb
+*.VC.db
 
-# 忽略编译输出文件夹
+# 忽略编译输出
 out/
 build/
+bin/
 *.exe
 *.dll
 *.lib
-*.log
 *.tmp
+*.log
 
-# CMake 构建输出
+# 忽略 CMake 构建文件
 CMakeFiles/
 CMakeCache.txt
 *.cmake
