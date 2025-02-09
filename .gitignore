@@ -1,0 +1,47 @@
+# Visual Studio 忽略的文件和文件夹
+
+# User-dependent files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+# Visual Studio 2019
+.vs/
+
+# Other VS-related directories and files
+*.VC.db
+*.VC.VC.opendb
+*.vcxproj.user
+*.tmp
+
+# Backup and temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
+*.DS_Store
+
+# Other configuration
+*.log
