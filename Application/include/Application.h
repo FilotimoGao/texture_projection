@@ -1,5 +1,5 @@
 #pragma once
-#include "Texture.h"
+#include "Utils.h"
 #include "Scene.h"
 #include "Camera.h"
 #include <iostream>
@@ -10,6 +10,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <IMGUI/imgui.h>
+#include <IMGUI/imgui_internal.h>
 #include <IMGUI/imgui_impl_glfw.h>
 #include <IMGUI/imgui_impl_opengl3.h>
 #include <IMGUI/ImGuiFileDialog.h>
@@ -25,6 +26,8 @@ public:
     bool init(const int& width, const int& height);
     void update();
     void destory();
+    void setAppWidth(int width) { appWidth = width; }
+    void setAppHeight(int height) { appHeight = height; }
 
 private:
     Application();
@@ -37,7 +40,7 @@ private:
     Scene scene;
     GLuint shaderProgram; // 着色器程序
 
-    bool loadShaders();
+    void renderUI();
 
     // === Camera ===
     Camera camera; // 添加相机对象

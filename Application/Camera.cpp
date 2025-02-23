@@ -48,6 +48,15 @@ void Camera::ProcessMouseScroll(float yOffset) {
         Zoom = 45.0f;
 }
 
+void Camera::ResetToDefault() {
+    Position = glm::vec3(0.0f, 0.0f, 3.0f); // 默认位置
+    Yaw = -90.0f;                           // 默认偏航角
+    Pitch = 0.0f;                           // 默认俯仰角
+    Zoom = 45.0f;                           // 默认缩放
+    updateCameraVectors();                  // 更新摄像机方向向量
+}
+
+
 // 更新相机方向向量
 void Camera::updateCameraVectors() {
     // 根据偏航角和俯仰角计算前方向

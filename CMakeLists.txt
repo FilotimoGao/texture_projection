@@ -7,6 +7,10 @@ project(Texture_projection)
 #本工程支持的C++版本
 set(CMAKE_CXX_STANDARD 17)
 
+# 查找 Pybind11
+set(pybind11_DIR "D:/Application/Lib/site-packages/pybind11/share/cmake/pybind11")
+find_package(pybind11 REQUIRED)
+
 add_subdirectory(Application)
 add_subdirectory(IMGUI)
 
@@ -26,4 +30,4 @@ set(
 )
 add_executable(Texture_projection ${SRCS})
 
-target_link_libraries(Texture_projection glfw3.lib imgui app)
+target_link_libraries(Texture_projection glfw3.lib imgui app pybind11::embed)
