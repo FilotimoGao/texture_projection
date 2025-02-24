@@ -22,6 +22,9 @@ CMakeCache.txt
 Testing/
 cmake_install.cmake
 
+# 忽略模型权重
+LCNN/checkpoint/checkpoint_best_2.pth
+
 # 系统生成的文件
 .DS_Store
 Thumbs.db
