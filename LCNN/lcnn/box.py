@@ -104,6 +104,7 @@ def _to_yaml(obj, filename=None, default_flow_style=False,
 def _from_yaml(yaml_string=None, filename=None,
                encoding="utf-8", errors="strict",
                **kwargs):
+    print("_from_yaml!")
     if filename:
         with open(filename, 'r',
                   encoding=encoding, errors=errors) as f:
@@ -643,6 +644,7 @@ class Box(dict):
         return out_dict
 
     def update(self, item=None, **kwargs):
+        print("update!!!")
         if not item:
             item = kwargs
         iter_over = item.items() if hasattr(item, 'items') else item

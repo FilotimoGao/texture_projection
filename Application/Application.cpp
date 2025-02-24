@@ -340,6 +340,42 @@ void Application::renderUI() {
         ImGuiFileDialog::Instance()->Close();
     }
     ImGui::End();
+
+    // 由python完成的模型切割工作
+    // 设置新的 ImGui 窗口位置和大小
+    ImGui::SetNextWindowPos(ImVec2(appWidth * 0.3f + 10, 10));
+    ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f - 20, 200));
+    ImGui::Begin("Process Image with demo.py", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    
+    if (ImGui::Button("Select Image for Processing")) {
+        ImGuiFileDialog::Instance()->OpenDialog(
+            "ChooseImageForProcessing",
+            "Choose Image",
+            ".png,.jpg,.jpeg",
+            config
+        );
+    }
+    // 显示选中的图片路径
+    if (!selectedImagePath.empty()) {
+        ImGui::Text("Selected Image: %s", selectedImagePath.c_str());
+    }
+    // 调用 demo.py 的按钮
+    if (ImGui::Button("Process Image with demo.py")) {
+        if (!selectedImagePath.empty()) {
+            processImageWithDemoPy(selectedImagePath);
+        }
+        else {
+            ImGui::Text("Please select an image first!");
+        }
+    }
+    ImGui::End();
+    // 处理文件选择对话框
+    if (ImGuiFileDialog::Instance()->Display("ChooseImageForProcessing")) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            selectedImagePath = ImGuiFileDialog::Instance()->GetFilePathName();
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
 }
 
 
@@ -390,7 +426,6 @@ void Application::mouse_callback(double xpos, double ypos) {
         camera.ProcessMouseMovement(xOffset, yOffset);
     }
 }
-
 
 // 处理鼠标滚动
 void Application::scroll_callback(double yoffset) {

@@ -1,7 +1,10 @@
 #include"Utils.h"
-#include <iostream>
-#define STB_IMAGE_IMPLEMENTATION
 #include <STBIMAGE/stb_image.h> // 使用 stb_image 库加载图片
+#include <Python.h>
+#include <filesystem>
+
+//namespace py = pybind11;
+using namespace std;
 
 GLuint loadTexture(const char* path) {
     GLuint textureID;
@@ -33,7 +36,7 @@ GLuint loadTexture(const char* path) {
         else if (channels == 4)
             format = GL_RGBA; // RGBA 图
         else {
-            std::cout << "Unsupported texture format: " << path << std::endl;
+            cout << "Unsupported texture format: " << path << endl;
             stbi_image_free(data);
             glDeleteTextures(1, &textureID);
             return 0;
@@ -43,7 +46,7 @@ GLuint loadTexture(const char* path) {
         glGenerateMipmap(GL_TEXTURE_2D);
     }
     else {
-        std::cout << "Failed to load texture: " << path << std::endl;
+        cout << "Failed to load texture: " << path << endl;
         glDeleteTextures(1, &textureID); // 失败时清理纹理
         return 0; // 返回 0 表示加载失败
     }
@@ -122,7 +125,7 @@ bool loadShaders(GLuint& shaderProgram) {
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
     if (!success) {
         glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        std::cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
+        cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << endl;
         return false;
     }
 
@@ -134,7 +137,7 @@ bool loadShaders(GLuint& shaderProgram) {
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
     if (!success) {
         glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        std::cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
+        cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << endl;
         return false;
     }
 
@@ -147,7 +150,7 @@ bool loadShaders(GLuint& shaderProgram) {
     glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
     if (!success) {
         glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-        std::cerr << "ERROR::PROGRAM::LINK_FAILED\n" << infoLog << std::endl;
+        cerr << "ERROR::PROGRAM::LINK_FAILED\n" << infoLog << endl;
         return false;
     }
 
@@ -156,4 +159,62 @@ bool loadShaders(GLuint& shaderProgram) {
     glDeleteShader(fragmentShader);
 
     return true;
+}
+
+
+// 替换反斜杠为正斜杠
+std::string convertSlashes(const std::string& path) {
+    std::string modifiedPath = path;
+    std::replace(modifiedPath.begin(), modifiedPath.end(), '\\', '/');
+    return modifiedPath;
+}
+
+void processImageWithDemoPy(const std::string& imagePath) {
+    Py_Initialize();
+    if (!Py_IsInitialized()) {
+        std::cout << "Python initialization failed" << std::endl;
+        return;
+    }
+
+    // 获取可执行文件的路径
+    std::filesystem::path execPath = std::filesystem::current_path();
+
+    // 推导出项目根目录
+    std::filesystem::path projectRoot = execPath.parent_path().parent_path().parent_path(); // 假设三层上移到根目录
+    std::filesystem::path lcnnPath = projectRoot / "LCNN";
+    std::string lcnnPathStr = convertSlashes(lcnnPath.string());
+
+    // 添加模块搜索路径
+    PyRun_SimpleString("import sys");
+    PyRun_SimpleString(("sys.path.append('" + lcnnPathStr + "')").c_str());  // 动态添加路径
+
+    // 导入模块
+    PyObject* pModule = PyImport_ImportModule("demo");
+    if (pModule == NULL) {
+        PyErr_Print();
+        std::cout << "Module not found" << std::endl;
+        return;
+    }
+
+    // 获取函数
+    PyObject* pFunc = PyObject_GetAttrString(pModule, "cut");
+    if (!pFunc || !PyCallable_Check(pFunc)) {
+        PyErr_Print();
+        std::cout << "Function not found or not callable" << std::endl;
+        Py_DECREF(pModule);
+        return;
+    }
+
+    // 将参数转换为 Python 对象
+    const char* arg0 = imagePath.c_str();
+    PyObject* pArgs = PyTuple_New(1);
+    PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(arg0));
+
+    // 调用函数
+    PyObject_CallObject(pFunc, pArgs);
+
+    // 清理
+    Py_XDECREF(pFunc);
+    Py_DECREF(pModule);
+    Py_Finalize();
 }

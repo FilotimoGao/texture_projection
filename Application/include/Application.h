@@ -40,6 +40,8 @@ private:
     Scene scene;
     GLuint shaderProgram; // 着色器程序
 
+    std::string selectedImagePath; // 存储选中的图片路径
+
     void renderUI();
 
     // === Camera ===
