@@ -105,7 +105,7 @@ void Application::update() {
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
         processInput();
-        renderUI();
+        workspaceUI();
         // 设置 OpenGL 渲染区域（右侧 70% 区域）
         glViewport(appWidth * 0.3f, 0, appWidth * 0.7f, appHeight);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -173,16 +173,83 @@ void Application::destory() {
 }
 
 
-void Application::renderUI() {
+void Application::workspaceUI() {
     IGFD::FileDialogConfig config;
-    config.countSelectionMax = 50;
+    config.countSelectionMax = 1;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+
     // 设置 ImGui 窗口的位置和大小（左侧 30% 区域）
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f, appHeight));
-    ImGui::Begin("Control Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    ImGui::Begin("Workspace", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+
+    // ------ 上部：由python完成的模型切割工作，模型切割工作区开始 ------ //
+    //ImGui::SetNextWindowPos(ImVec2(0, 0));
+    //ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f, appHeight * 0.3f));
+    ImGui::Begin("Image Preprocessing", nullptr);
+
+    if (ImGui::Button("Select Image")) {
+        ImGuiFileDialog::Instance()->OpenDialog(
+            "ChooseImageForProcessing",
+            "Choose Image",
+            ".png,.jpg,.jpeg",
+            config
+        );
+    }
+
+    // 显示选中的图片路径
+    if (!selecImgPath.empty()) {
+        ImGui::Text("Selected Image: %s", selecImgPath.c_str());
+
+        // 加载并创建纹理
+        if (selecImgTexID == 0) {
+            selecImgTexID = loadTexture(selecImgPath.c_str(), targetWidth, targetHeight, false);
+        }
+
+        // 在当前窗口显示选中的图片
+        if (selecImgTexID != 0) {
+            int width = (int)(appWidth * 0.3 * 0.8);
+            int height = (int)((width * targetHeight) / targetWidth);
+            ImGui::Image((void*)(intptr_t)selecImgTexID, ImVec2(width, height)); // 设置显示的尺寸
+        }
+
+        selectTargetUI();
+
+        // 调用 demo.py 的按钮
+        if (ImGui::Button("Cut Image")) {
+            if (!selecImgPath.empty()) {
+                processImageWithDemoPy(selecImgPath);
+            }
+            else {
+                ImGui::Text("Please select an image first!");
+            }
+        }
+    }
+
+    // 处理文件选择对话框
+    if (ImGuiFileDialog::Instance()->Display("ChooseImageForProcessing")) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            selecImgPath = ImGuiFileDialog::Instance()->GetFilePathName();
+            selecImgTexID = 0;
+            selectTarget = false;
+            targetPoints[0] = glm::vec2(0, 0);
+            targetPoints[1] = glm::vec2(1, 0);
+            targetPoints[2] = glm::vec2(0, 1);
+            targetPoints[3] = glm::vec2(1, 1);
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+    ImGui::End();
+    // ------ 上部：由python完成的模型切割工作，模型切割工作区结束 ------ //
+
+    // ------ 下部：由OpenGL完成的模型控制工作，模型转换工作区开始 ------ //
+    //ImGui::SetNextWindowPos(ImVec2(0, appHeight * 0.3f)); // 下部窗口位置
+    //ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f, appHeight * 0.7f)); // 下部窗口大小
+    ImGui::Begin("Control Panel", nullptr);
+    config.countSelectionMax = 50;
+
     // 显示所有模型，并支持多选
     for (size_t i = 0; i < model_num; ++i) {
         char label[32];
@@ -237,7 +304,7 @@ void Application::renderUI() {
         // ---- 2. 批量修改纹理 ----
         static unsigned int batchDefaultTexture = 0;
         static unsigned int batchProjectionTexture = 0;
-        static int currentTextureMode = 0; // 0: UV Mapping, 1: Projection Mapping
+        static int currentTextureMode = 1; // 0: UV Mapping, 1: Projection Mapping
         if (ImGui::CollapsingHeader("Texture")) {
             ImGui::Text("Texture Mode:");
             ImGui::RadioButton("UV Mapping", &currentTextureMode, 0);
@@ -273,7 +340,7 @@ void Application::renderUI() {
             if (ImGuiFileDialog::Instance()->Display("ChooseBatchTexture")) {
                 if (ImGuiFileDialog::Instance()->IsOk()) {
                     std::string texturePath = ImGuiFileDialog::Instance()->GetFilePathName();
-                    unsigned int newTexture = loadTexture(texturePath.c_str());
+                    unsigned int newTexture = loadTexture(texturePath.c_str(), true);
                     batchDefaultTexture = newTexture;
                     batchProjectionTexture = newTexture;
                     // 应用纹理到所有被选中的模型
@@ -325,8 +392,8 @@ void Application::renderUI() {
                     2, 3, 0
                 };
                 // 为每个模型加载独立的纹理
-                unsigned int texture = loadTexture(filePath.c_str());
-                unsigned int projectionTexture = loadTexture(filePath.c_str());
+                unsigned int texture = loadTexture(filePath.c_str(), true);
+                unsigned int projectionTexture = loadTexture(filePath.c_str(), true);
                 // 创建模型并为其设置独立的纹理和投影纹理
                 scene.addModel(vertices, indices);
                 Model* model = scene.getModel(model_num);
@@ -340,41 +407,118 @@ void Application::renderUI() {
         ImGuiFileDialog::Instance()->Close();
     }
     ImGui::End();
+    // ------ 下部：由OpenGL完成的模型控制工作，模型转换工作区结束 ------ //
 
-    // 由python完成的模型切割工作
-    // 设置新的 ImGui 窗口位置和大小
-    ImGui::SetNextWindowPos(ImVec2(appWidth * 0.3f + 10, 10));
-    ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f - 20, 200));
-    ImGui::Begin("Process Image with demo.py", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
-    
-    if (ImGui::Button("Select Image for Processing")) {
-        ImGuiFileDialog::Instance()->OpenDialog(
-            "ChooseImageForProcessing",
-            "Choose Image",
-            ".png,.jpg,.jpeg",
-            config
-        );
-    }
-    // 显示选中的图片路径
-    if (!selectedImagePath.empty()) {
-        ImGui::Text("Selected Image: %s", selectedImagePath.c_str());
-    }
-    // 调用 demo.py 的按钮
-    if (ImGui::Button("Process Image with demo.py")) {
-        if (!selectedImagePath.empty()) {
-            processImageWithDemoPy(selectedImagePath);
-        }
-        else {
-            ImGui::Text("Please select an image first!");
-        }
-    }
     ImGui::End();
-    // 处理文件选择对话框
-    if (ImGuiFileDialog::Instance()->Display("ChooseImageForProcessing")) {
-        if (ImGuiFileDialog::Instance()->IsOk()) {
-            selectedImagePath = ImGuiFileDialog::Instance()->GetFilePathName();
+}
+
+// 对选中图片进行target range选定
+void Application::selectTargetUI() {
+    if (ImGui::Button("Select Target Range")) {
+        selectTarget = true;
+        nextTargetPoints[0] = targetPoints[0];
+        nextTargetPoints[1] = targetPoints[1];
+        nextTargetPoints[2] = targetPoints[2];
+        nextTargetPoints[3] = targetPoints[3];
+    }
+    if (selectTarget) {
+        ImGui::SetNextWindowPos(ImVec2(appWidth * 0.3f, 0));
+        ImGui::SetNextWindowSize(ImVec2(appWidth * 0.7f, appHeight));
+        //ImGui::SetNextWindowSizeConstraints(ImVec2(500, 400), ImVec2(FLT_MAX, FLT_MAX));
+        ImGui::Begin("Select Target Range", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+
+        // 显示选中的图片
+        if (selecImgTexID != 0) {
+            ImVec2 windowSize = ImGui::GetWindowSize();
+            ImVec2 windowPos = ImGui::GetWindowPos();
+            float width = windowSize.x * 0.8f;
+            float height = windowSize.y * 0.8f;
+
+            float aspectRatio = float(targetWidth) / float(targetHeight); // 计算图片的宽高比
+            // 根据宽高比调整目标尺寸
+            if (width / height > aspectRatio) {
+                width = height * aspectRatio; // 以高度为基准
+            }
+            else {
+                height = width / aspectRatio; // 以宽度为基准
+            }
+
+            // 计算图片在窗口的中心位置
+            ImVec2 imagePos = ImVec2((windowSize.x - width) * 0.5f, (windowSize.y - height) * 0.5f);
+            ImGui::SetCursorPos(imagePos); // 设置光标位置
+            ImGui::Image((void*)(intptr_t)selecImgTexID, ImVec2(width, height));
+            glm::vec2 paintPoints[4]; // 最终绘制在窗口上的点（原点为整个屏幕在左上角）
+
+            // 更新targetPoints数组
+            paintPoints[0] = glm::vec2(windowPos.x + imagePos.x + nextTargetPoints[0].x * width, windowPos.y + imagePos.y + nextTargetPoints[0].y * height);        // 上左
+            paintPoints[1] = glm::vec2(windowPos.x + imagePos.x + nextTargetPoints[1].x * width, windowPos.y + imagePos.y + nextTargetPoints[1].y * height);        // 上右
+            paintPoints[2] = glm::vec2(windowPos.x + imagePos.x + nextTargetPoints[2].x * width, windowPos.y + imagePos.y + nextTargetPoints[2].y * height);        // 下左
+            paintPoints[3] = glm::vec2(windowPos.x + imagePos.x + nextTargetPoints[3].x * width, windowPos.y + imagePos.y + nextTargetPoints[3].y * height);        // 下右
+
+            // 拖动逻辑
+            static int selectedPoint = -1; // 当前选择的点
+            ImVec2 mousePos = ImGui::GetMousePos(); // 获取鼠标位置
+
+            // 检测鼠标是否点击在某个点的范围内
+            if (ImGui::IsMouseClicked(0)) { // 左键点击
+                for (int i = 0; i < 4; ++i) {
+                    float dist = glm::distance(glm::vec2(mousePos.x, mousePos.y), paintPoints[i]);
+                    if (dist < 10.0f) { // 如果点击在点的范围内
+                        selectedPoint = i; // 选中该点
+                        break;
+                    }
+                }
+            }
+
+            // 鼠标松开须重置selectedPoint，否则拖动仍会带动点
+            if (ImGui::IsMouseReleased(0)) {
+                selectedPoint = -1;
+            }
+
+            // 拖动点
+            if (ImGui::IsMouseDragging(0) && selectedPoint != -1) {
+                // 更新点的位置为鼠标位置
+                paintPoints[selectedPoint].x = mousePos.x;
+                paintPoints[selectedPoint].y = mousePos.y;
+
+                // 限制点的位置在图片范围内
+                paintPoints[selectedPoint].x = glm::clamp(paintPoints[selectedPoint].x,
+                    windowPos.x + imagePos.x,
+                    windowPos.x + imagePos.x + width);
+                paintPoints[selectedPoint].y = glm::clamp(paintPoints[selectedPoint].y,
+                    windowPos.y + imagePos.y,
+                    windowPos.y + imagePos.y + height);
+
+                // 更新相对原图的位置
+                nextTargetPoints[selectedPoint] = glm::vec2((paintPoints[selectedPoint].x - windowPos.x - imagePos.x) / width, (paintPoints[selectedPoint].y - windowPos.y - imagePos.y) / height);
+            }
+
+            // 在图片上绘制四个点，以及四条边
+            for (int i = 0; i < 4; ++i) {
+                ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(paintPoints[i].x, paintPoints[i].y), 5.0f, IM_COL32(255, 0, 0, 255)); // 绘制红色圆点
+            }
+
+            // 绘制连接线
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[0].x, paintPoints[0].y), ImVec2(paintPoints[1].x, paintPoints[1].y), IM_COL32(255, 0, 0, 255), 2.0f); // 0 -> 1
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[1].x, paintPoints[1].y), ImVec2(paintPoints[3].x, paintPoints[3].y), IM_COL32(255, 0, 0, 255), 2.0f); // 1 -> 2
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[2].x, paintPoints[2].y), ImVec2(paintPoints[3].x, paintPoints[3].y), IM_COL32(255, 0, 0, 255), 2.0f); // 2 -> 3
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[2].x, paintPoints[2].y), ImVec2(paintPoints[0].x, paintPoints[0].y), IM_COL32(255, 0, 0, 255), 2.0f); // 3 -> 0
         }
-        ImGuiFileDialog::Instance()->Close();
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+        if (ImGui::Button("Apply")) {
+            targetPoints[0] = nextTargetPoints[0];
+            targetPoints[1] = nextTargetPoints[1];
+            targetPoints[2] = nextTargetPoints[2];
+            targetPoints[3] = nextTargetPoints[3];
+            selectTarget = false; // 应用设置，关闭窗口
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            selectTarget = false; // 关闭窗口
+        }
+        ImGui::End();
     }
 }
 
@@ -384,7 +528,11 @@ Application::Application()
     : appWidth(0), appHeight(0), appWindow(nullptr), shaderProgram(0),
     camera(glm::vec3(0.0f, 0.0f, 3.0f)), // 初始化相机，默认位置为 (0, 0, 3)
     lastX(400.0f), lastY(300.0f), firstMouse(true),
-    deltaTime(0.0f), lastFrame(0.0f), isMousePressed(false) {}
+    deltaTime(0.0f), lastFrame(0.0f), isMousePressed(false),
+    selecImgTexID(0), selectTarget(false),
+    targetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f} },
+    nextTargetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f} },
+    targetWidth(0), targetHeight(0) {}
 
 Application::~Application() {
     releaseInstance();
@@ -402,6 +550,10 @@ void Application::processInput() {
 }
 
 void Application::onMousePress(bool pressed) {
+    if (ImGui::GetIO().WantCaptureMouse) {
+        // 如果 ImGui 捕获了鼠标点击，则忽略点击事件
+        return;
+    }
     double xpos, ypos;
     glfwGetCursorPos(appWindow, &xpos, &ypos);
     // 检查鼠标是否在 OpenGL 渲染区域内（右侧 70% 区域）

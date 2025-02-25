@@ -40,9 +40,17 @@ private:
     Scene scene;
     GLuint shaderProgram; // 着色器程序
 
-    std::string selectedImagePath; // 存储选中的图片路径
+    std::string selecImgPath; // 存储选中的图片路径
+    unsigned int selecImgTexID;  // 存储选中的图片纹理ID
 
-    void renderUI();
+    void workspaceUI();
+
+    // 关于选定图片目标范围的变量
+    bool selectTarget;
+    int targetWidth, targetHeight;
+    glm::vec2 targetPoints[4]; // 用于记录最终的切分范围（上左，上右，下左，下右）
+    glm::vec2 nextTargetPoints[4]; // 用于记录切分过程中的切分范围（上左，上右，下左，下右）
+    void selectTargetUI();
 
     // === Camera ===
     Camera camera; // 添加相机对象
@@ -59,4 +67,5 @@ private:
     void onMousePress(bool pressed); // 鼠标按下处理
     void mouse_callback(double xpos, double ypos);
     void scroll_callback(double yoffset);
+
 };
