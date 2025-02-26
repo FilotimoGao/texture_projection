@@ -5,6 +5,36 @@
 #include <utility>
 
 int model_num = 0;
+std::atomic<bool> isProcessing(false);
+std::atomic<bool> processCompleted(false);
+std::promise<std::vector<std::string>> modelPromise;
+
+void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4]) {
+    isProcessing = true;
+    processCompleted = false;
+
+    // 在这里进行 Python 处理
+    std::string lcnnPathStr = convertPath("LCNN");
+    initializePython(lcnnPathStr);
+    processImageWithRangePy(imagePath, targetPoints);
+    processImageWithCutPy();
+    finalizePython();
+
+    // 加载结果图片
+    std::vector<std::string> imageFiles;
+    namespace fs = std::filesystem;
+    for (const auto& entry : fs::directory_iterator("temp_output")) {
+        if (entry.is_regular_file()) {
+            imageFiles.push_back(entry.path().string());
+        }
+    }
+
+    // 设置 promise 的值以传递结果
+    modelPromise.set_value(imageFiles);
+
+    isProcessing = false;
+    processCompleted = true;
+}
 
 // 添加此函数以提取文件名中的数字
 int extractNumberFromFilename(const std::string& filename) {
@@ -83,6 +113,7 @@ bool Application::init(const int& width, const int& height) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.Fonts->AddFontFromFileTTF(convertPath("IMGUI/simsun.ttc").c_str(), 18.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
     ImGui::StyleColorsDark();
 
     // 绑定ImGui
@@ -183,14 +214,13 @@ void Application::workspaceUI() {
     // 设置 ImGui 窗口的位置和大小（左侧 30% 区域）
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f, appHeight));
-    ImGui::Begin("Workspace", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    ImGui::Begin(u8"工作区(Workspace)", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
     // ------ 上部：由python完成的模型切割工作，模型切割工作区开始 ------ //
-    //ImGui::SetNextWindowPos(ImVec2(0, 0));
-    //ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f, appHeight * 0.3f));
-    ImGui::Begin("Image Preprocessing", nullptr);
-
-    if (ImGui::Button("Select Image")) {
+    ImGui::Begin(u8"图片预处理(Image Preprocessing)", nullptr);
+    ImGui::TextWrapped(u8"此功能区用于选择目标图片进行预处理，点击下方“Load”加载图片，仅限选择一张。");
+    ImGui::Spacing();ImGui::Spacing();
+    if (ImGui::Button(u8"加载(Load)")) {
         ImGuiFileDialog::Instance()->OpenDialog(
             "ChooseImageForProcessing",
             "Choose Image",
@@ -201,7 +231,7 @@ void Application::workspaceUI() {
 
     // 显示选中的图片路径
     if (!selecImgPath.empty()) {
-        ImGui::Text("Selected Image: %s", selecImgPath.c_str());
+        ImGui::Text(u8"当前图片路径: %s", selecImgPath.c_str());
 
         // 加载并创建纹理
         if (selecImgTexID == 0) {
@@ -210,21 +240,54 @@ void Application::workspaceUI() {
 
         // 在当前窗口显示选中的图片
         if (selecImgTexID != 0) {
-            int width = (int)(appWidth * 0.3 * 0.8);
+            ImVec2 windowPos = ImGui::GetWindowPos();
+            ImVec2 windowSize = ImGui::GetWindowSize();
+            ImVec2 imagePos = ImGui::GetCursorScreenPos(); // 当前光标，也就是图像左上角坐标
+            int width = (int)(windowSize.x * 0.6);
             int height = (int)((width * targetHeight) / targetWidth);
             ImGui::Image((void*)(intptr_t)selecImgTexID, ImVec2(width, height)); // 设置显示的尺寸
+            ImVec2 paintPoints[4] = {
+                ImVec2(imagePos.x + targetPoints[0].x * width, imagePos.y + targetPoints[0].y * height),
+                ImVec2(imagePos.x + targetPoints[1].x * width, imagePos.y + targetPoints[1].y * height),
+                ImVec2(imagePos.x + targetPoints[2].x * width, imagePos.y + targetPoints[2].y * height),
+                ImVec2(imagePos.x + targetPoints[3].x * width, imagePos.y + targetPoints[3].y * height)
+            };
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            drawList->AddPolyline(paintPoints, 4, IM_COL32(255, 0, 0, 255), true, 1.0f); // 红色边框，线条宽度为2
         }
 
         selectTargetUI();
 
         // 调用 demo.py 的按钮
-        if (ImGui::Button("Cut Image")) {
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::TextWrapped(u8"点击下方“Cut”，将调用LCNN进行楼梯图片剪切。");
+        if (ImGui::Button(u8"剪切（Cut）")) {
             if (!selecImgPath.empty()) {
-                processImageWithDemoPy(selecImgPath);
+                if (!isProcessing) {
+                    // 创建并启动线程
+                    std::thread processingThread(runImageProcessing, selecImgPath, targetPoints);
+                    processingThread.detach(); // 使线程分离
+                }
             }
             else {
                 ImGui::Text("Please select an image first!");
             }
+        }
+
+        // 显示处理状态
+        ImGui::Spacing(); ImGui::Spacing();
+        if (isProcessing) {
+            ImGui::Text(u8"正在处理中……");
+            ImGui::Text(u8"模型预测可能需要一些时间，请耐心等待……");
+        }
+        if (processCompleted) {
+            ImGui::Text(u8"处理已完成！");
+            std::vector<std::string> imageFiles = modelPromise.get_future().get();
+            for (const auto& filePath : imageFiles) {
+                std::cout << "Loaded file: " << filePath << std::endl;
+            }
+            createModels(imageFiles);
+            processCompleted = false; // 重置状态
         }
     }
 
@@ -236,8 +299,8 @@ void Application::workspaceUI() {
             selectTarget = false;
             targetPoints[0] = glm::vec2(0, 0);
             targetPoints[1] = glm::vec2(1, 0);
-            targetPoints[2] = glm::vec2(0, 1);
-            targetPoints[3] = glm::vec2(1, 1);
+            targetPoints[2] = glm::vec2(1, 1);
+            targetPoints[3] = glm::vec2(0, 1);
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -245,9 +308,7 @@ void Application::workspaceUI() {
     // ------ 上部：由python完成的模型切割工作，模型切割工作区结束 ------ //
 
     // ------ 下部：由OpenGL完成的模型控制工作，模型转换工作区开始 ------ //
-    //ImGui::SetNextWindowPos(ImVec2(0, appHeight * 0.3f)); // 下部窗口位置
-    //ImGui::SetNextWindowSize(ImVec2(appWidth * 0.3f, appHeight * 0.7f)); // 下部窗口大小
-    ImGui::Begin("Control Panel", nullptr);
+    ImGui::Begin(u8"3D模型控制 (Model Control)", nullptr);
     config.countSelectionMax = 50;
 
     // 显示所有模型，并支持多选
@@ -273,10 +334,10 @@ void Application::workspaceUI() {
     // 如果有选中的模型，显示批量控制面板
     if (!selectedModelIndices.empty()) {
         ImGui::Separator();
-        ImGui::Text("Batch Transform and Texture Controls:");
+        ImGui::TextWrapped(u8"下面的功能支持批量进行模型的转换和纹理设置，按住ctrl即可进行上方Models多选。");
         // 摄像机恢复默认按钮
         if (ImGui::CollapsingHeader("Camera Controls")) {
-            if (ImGui::Button("Reset Camera to Default")) {
+            if (ImGui::Button(u8"重置视角 (Reset)")) {
                 camera.ResetToDefault();
             }
         }
@@ -285,10 +346,10 @@ void Application::workspaceUI() {
         static glm::vec3 batchRotation(0.0f);
         static glm::vec2 batchSize(1.0f);
         if (ImGui::CollapsingHeader("Transform")) {
-            ImGui::InputFloat3("Batch Position", &batchPosition[0]);
-            ImGui::InputFloat3("Batch Rotation", &batchRotation[0]);
-            ImGui::InputFloat2("Batch Size", &batchSize[0]);
-            if (ImGui::Button("Apply Transform")) {
+            ImGui::InputFloat3("Position", &batchPosition[0]);
+            ImGui::InputFloat3("Rotation", &batchRotation[0]);
+            ImGui::InputFloat2("Size", &batchSize[0]);
+            if (ImGui::Button(u8"应用转换(Apply)")) {
                 for (int index : selectedModelIndices) {
                     Model* model = scene.getModel(index);
                     if (model) {
@@ -304,18 +365,14 @@ void Application::workspaceUI() {
         // ---- 2. 批量修改纹理 ----
         static unsigned int batchDefaultTexture = 0;
         static unsigned int batchProjectionTexture = 0;
-        static int currentTextureMode = 1; // 0: UV Mapping, 1: Projection Mapping
+        static int currentTextureMode = 0; // 0: UV Mapping, 1: Projection Mapping
         if (ImGui::CollapsingHeader("Texture")) {
-            ImGui::Text("Texture Mode:");
+            ImGui::Text(u8"纹理模式(Texture Mode):");
             ImGui::RadioButton("UV Mapping", &currentTextureMode, 0);
             ImGui::RadioButton("Projection Mapping", &currentTextureMode, 1);
-            if (currentTextureMode == 0) {
-                ImGui::Text("Set Default Texture for Selected:");
-            }
-            else {
-                ImGui::Text("Set Projection Texture for Selected:");
-            }
-            if (ImGui::Button("Apply Texture Mode")) {
+            //std::cout << "size: " << selectedModelIndices.size() << std::endl;
+
+            if (ImGui::Button(u8"应用纹理模式(Apply)")) {
                 for (int index : selectedModelIndices) {
                     Model* model = scene.getModel(index);
                     if (model) {
@@ -329,7 +386,7 @@ void Application::workspaceUI() {
                 }
             }
             ImGui::Separator();
-            if (ImGui::Button("Choose Texture")) {
+            if (ImGui::Button(u8"重设纹理(Texture Reset)")) {
                 ImGuiFileDialog::Instance()->OpenDialog(
                     "ChooseBatchTexture",
                     "Choose Texture",
@@ -357,7 +414,7 @@ void Application::workspaceUI() {
         }
     }
     // 文件选择和加载
-    if (ImGui::Button("Select Images")) {
+    if (ImGui::Button(u8"图片多选(Select)")) {
         ImGuiFileDialog::Instance()->OpenDialog(
             "ChooseImages",
             "Choose Images",
@@ -369,40 +426,11 @@ void Application::workspaceUI() {
     if (ImGuiFileDialog::Instance()->Display("ChooseImages")) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
             auto selectedFiles = ImGuiFileDialog::Instance()->GetSelection();
-            scene.clear();
-            model_num = 0;
-            // 创建一个 vector 来存储文件名和路径，之后按照数字排序
-            std::vector<std::pair<int, std::string>> filesWithNumbers;
-            for (auto& [key, filePath] : selectedFiles) {
-                int number = extractNumberFromFilename(filePath);
-                if (number != -1) {
-                    filesWithNumbers.emplace_back(number, filePath);
-                }
+            std::vector<std::string> filePaths;
+            for (const auto& [key, filePath] : selectedFiles) {
+                filePaths.push_back(filePath);
             }
-            std::sort(filesWithNumbers.begin(), filesWithNumbers.end());
-            for (auto& [key, filePath] : filesWithNumbers) {
-                std::vector<float> vertices = {
-                    -0.5f, -0.5f, -0.2f * (model_num + 1), 0.0f, 0.0f,
-                     0.5f, -0.5f, -0.2f * (model_num + 1), 1.0f, 0.0f,
-                     0.5f,  0.5f, -0.2f * (model_num + 1), 1.0f, 1.0f,
-                    -0.5f,  0.5f, -0.2f * (model_num + 1), 0.0f, 1.0f
-                };
-                std::vector<unsigned int> indices = {
-                    0, 1, 2,
-                    2, 3, 0
-                };
-                // 为每个模型加载独立的纹理
-                unsigned int texture = loadTexture(filePath.c_str(), true);
-                unsigned int projectionTexture = loadTexture(filePath.c_str(), true);
-                // 创建模型并为其设置独立的纹理和投影纹理
-                scene.addModel(vertices, indices);
-                Model* model = scene.getModel(model_num);
-                model->setTexture(texture);
-                model->setProjectionTexture(projectionTexture);
-                model->setProjectionMatrix(glm::mat4(1.0f)); // 默认投影矩阵
-                model->setTextureMode(TextureMode::UV_MAPPING); // 默认使用 UV 映射
-                model_num++;
-            }
+            createModels(filePaths); // 调用新函数
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -414,7 +442,7 @@ void Application::workspaceUI() {
 
 // 对选中图片进行target range选定
 void Application::selectTargetUI() {
-    if (ImGui::Button("Select Target Range")) {
+    if (ImGui::Button(u8"设置目标范围(Range)")) {
         selectTarget = true;
         nextTargetPoints[0] = targetPoints[0];
         nextTargetPoints[1] = targetPoints[1];
@@ -425,7 +453,7 @@ void Application::selectTargetUI() {
         ImGui::SetNextWindowPos(ImVec2(appWidth * 0.3f, 0));
         ImGui::SetNextWindowSize(ImVec2(appWidth * 0.7f, appHeight));
         //ImGui::SetNextWindowSizeConstraints(ImVec2(500, 400), ImVec2(FLT_MAX, FLT_MAX));
-        ImGui::Begin("Select Target Range", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+        ImGui::Begin(u8"设置目标范围(Select Target Range)", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
         // 显示选中的图片
         if (selecImgTexID != 0) {
@@ -463,7 +491,7 @@ void Application::selectTargetUI() {
             if (ImGui::IsMouseClicked(0)) { // 左键点击
                 for (int i = 0; i < 4; ++i) {
                     float dist = glm::distance(glm::vec2(mousePos.x, mousePos.y), paintPoints[i]);
-                    if (dist < 10.0f) { // 如果点击在点的范围内
+                    if (dist < 15.0f) { // 如果点击在点的范围内
                         selectedPoint = i; // 选中该点
                         break;
                     }
@@ -495,19 +523,18 @@ void Application::selectTargetUI() {
 
             // 在图片上绘制四个点，以及四条边
             for (int i = 0; i < 4; ++i) {
-                ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(paintPoints[i].x, paintPoints[i].y), 5.0f, IM_COL32(255, 0, 0, 255)); // 绘制红色圆点
+                ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(paintPoints[i].x, paintPoints[i].y), 7.0f, IM_COL32(255, 0, 0, 255)); // 绘制红色圆点
             }
 
             // 绘制连接线
             ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[0].x, paintPoints[0].y), ImVec2(paintPoints[1].x, paintPoints[1].y), IM_COL32(255, 0, 0, 255), 2.0f); // 0 -> 1
-            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[1].x, paintPoints[1].y), ImVec2(paintPoints[3].x, paintPoints[3].y), IM_COL32(255, 0, 0, 255), 2.0f); // 1 -> 2
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[1].x, paintPoints[1].y), ImVec2(paintPoints[2].x, paintPoints[2].y), IM_COL32(255, 0, 0, 255), 2.0f); // 1 -> 2
             ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[2].x, paintPoints[2].y), ImVec2(paintPoints[3].x, paintPoints[3].y), IM_COL32(255, 0, 0, 255), 2.0f); // 2 -> 3
-            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[2].x, paintPoints[2].y), ImVec2(paintPoints[0].x, paintPoints[0].y), IM_COL32(255, 0, 0, 255), 2.0f); // 3 -> 0
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[3].x, paintPoints[3].y), ImVec2(paintPoints[0].x, paintPoints[0].y), IM_COL32(255, 0, 0, 255), 2.0f); // 3 -> 0
         }
 
-        ImGui::Spacing();
-        ImGui::Spacing();
-        if (ImGui::Button("Apply")) {
+        ImGui::Spacing(); ImGui::Spacing();
+        if (ImGui::Button(u8"应用(Apply)")) {
             targetPoints[0] = nextTargetPoints[0];
             targetPoints[1] = nextTargetPoints[1];
             targetPoints[2] = nextTargetPoints[2];
@@ -515,13 +542,60 @@ void Application::selectTargetUI() {
             selectTarget = false; // 应用设置，关闭窗口
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
+        if (ImGui::Button(u8"取消(Cancel)")) {
             selectTarget = false; // 关闭窗口
         }
         ImGui::End();
     }
 }
 
+
+void Application::createModels(const std::vector<std::string>& filePaths) {
+    // 清理当前场景和选择的模型索引
+    scene.clear();
+    selectedModelIndices.clear();
+    model_num = 0;
+
+    // 创建一个 vector 来存储文件名和路径，之后按照数字排序
+    std::vector<std::pair<int, std::string>> filesWithNumbers;
+
+    for (const auto& filePath : filePaths) {
+        int number = extractNumberFromFilename(filePath);
+        if (number != -1) {
+            filesWithNumbers.emplace_back(number, filePath);
+        }
+    }
+
+    // 对文件按数字排序
+    std::sort(filesWithNumbers.begin(), filesWithNumbers.end());
+
+    // 遍历排序后的文件并创建模型
+    for (auto& [key, filePath] : filesWithNumbers) {
+        std::vector<float> vertices = {
+            -0.5f, -0.5f, -0.2f * (model_num + 1), 0.0f, 0.0f,
+             0.5f, -0.5f, -0.2f * (model_num + 1), 1.0f, 0.0f,
+             0.5f,  0.5f, -0.2f * (model_num + 1), 1.0f, 1.0f,
+            -0.5f,  0.5f, -0.2f * (model_num + 1), 0.0f, 1.0f
+        };
+        std::vector<unsigned int> indices = {
+            0, 1, 2,
+            2, 3, 0
+        };
+
+        // 加载纹理
+        unsigned int texture = loadTexture(filePath.c_str(), true);
+        unsigned int projectionTexture = loadTexture(filePath.c_str(), true);
+
+        // 创建模型并为其设置独立的纹理和投影纹理
+        scene.addModel(vertices, indices);
+        Model* model = scene.getModel(model_num);
+        model->setTexture(texture);
+        model->setProjectionTexture(projectionTexture);
+        model->setProjectionMatrix(glm::mat4(1.0f)); // 默认投影矩阵
+        model->setTextureMode(TextureMode::UV_MAPPING); // 默认使用 UV 映射
+        model_num++;
+    }
+}
 
 
 Application::Application()
@@ -530,8 +604,8 @@ Application::Application()
     lastX(400.0f), lastY(300.0f), firstMouse(true),
     deltaTime(0.0f), lastFrame(0.0f), isMousePressed(false),
     selecImgTexID(0), selectTarget(false),
-    targetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f} },
-    nextTargetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f} },
+    targetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} },
+    nextTargetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} },
     targetWidth(0), targetHeight(0) {}
 
 Application::~Application() {

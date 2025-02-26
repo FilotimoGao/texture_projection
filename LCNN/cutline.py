@@ -104,8 +104,8 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100)
         draw.line([extended_start, extended_end], fill=255, width=3)
 
     # 绘制原始线段和延长线段到一张新图像上
-    visual_image = img.copy()
-    draw_lines(visual_image, lines, extended_lines, os.path.join(output_dir, 'lines_visualization.png'))
+    # visual_image = img.copy()
+    # draw_lines(visual_image, lines, extended_lines, os.path.join(output_dir, 'lines_visualization.png'))
 
     mask_data = np.array(mask_img)
 
@@ -137,7 +137,7 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100)
         regions.append((y_min, y_max, region_label, x_min, x_max))
 
     # 根据 y_min 和 y_max 的平均值排序
-    regions.sort(key=lambda r: (r[0] + r[1]) / 2)  # r[0] 是 y_min, r[1] 是 y_max
+    regions.sort(key=lambda r: (r[0] + r[1]) / 2, reverse=True)  # r[0] 是 y_min, r[1] 是 y_max
 
     # 使用排序后的索引重新命名区域
     for new_index, (y_min, y_max, region_label, x_min, x_max) in enumerate(regions, start=1):
@@ -168,22 +168,3 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100)
 
     print(f"分割完成，共生成 {len(regions)} 个区域，并保存到 '{output_dir}' 文件夹中。")
 
-# 示例使用
-if __name__ == "__main__":
-    # 示例线段数据：((x1, y1), (x2, y2)) 表示线段的起点和终点
-    lines = [
-        ((0, 125), (148, 112)),
-        ((214, 371), (511, 372)),
-        ((0, 266), (228, 261)),
-        ((0, 204), (511, 178)),
-        ((0, 158), (511, 124)),
-        ((0, 364), (214, 369)),
-        ((230, 262), (511, 252))
-    ]
-    # 输入图片路径和输出目录
-    input_image_path = "imgs/color_0_night.png"
-    output_directory = "output"
-    clear_output_directory(output_directory)
-    
-    # 调用分割函数
-    segment_image_by_extended_lines(input_image_path, lines, output_directory)

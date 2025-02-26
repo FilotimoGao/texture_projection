@@ -11,8 +11,12 @@ import skimage.transform
 import torch
 import yaml
 from docopt import docopt
+from PIL import Image
+from PIL import ImageDraw
 
 from cutline import segment_image_by_extended_lines
+from cutline import clear_output_directory
+
 import lcnn
 from lcnn.config import C, M
 from lcnn.models.line_vectorizer import LineVectorizer
@@ -121,5 +125,33 @@ def cut(imname):
         fscores.append(nscores)
     
     # 调用分割函数
-    output_directory = "output"
-    segment_image_by_extended_lines(imname, flines, output_directory, min_size=200)
+    output_directory = "temp_output"
+    segment_image_by_extended_lines(imname, flines, output_directory, min_size=250)
+
+
+def target_range(image_path, points):
+    print("range start!")
+    image = Image.open(image_path).convert("RGBA")
+    print(image_path)
+    img_width, img_height = image.size
+    pixel_points = [(int(x * img_width), int(y * img_height)) for x, y in points]
+
+    transparent_image = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(transparent_image)
+
+    # 绘制多边形
+    draw.polygon(pixel_points, fill=(255, 255, 255, 255))
+    mask = Image.new("L", image.size, 0)  # 创建一个灰度图像作为掩码
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.polygon(pixel_points, fill=255)  # 在掩码上绘制多边形区域
+
+    # 将原图与掩码合并
+    result_image = Image.composite(image, transparent_image, mask)
+
+    # 保存结果
+    output_dir = "temp_output"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = "temp_output/range.png"
+    print(output_path)
+    result_image.save(output_path)
+    print("range finished!")

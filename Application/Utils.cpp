@@ -217,24 +217,31 @@ std::string convertSlashes(const std::string& path) {
     return modifiedPath;
 }
 
-void processImageWithDemoPy(const std::string& imagePath) {
+std::string convertPath(const std::string& path) {
+    std::filesystem::path execPath = std::filesystem::current_path(); // 获取可执行文件路径
+    std::filesystem::path projectRoot = execPath.parent_path().parent_path().parent_path(); // 假设三层上移到根目录
+    std::filesystem::path absolutePath = projectRoot / path;
+    return convertSlashes(absolutePath.string());
+}
+
+void initializePython(const std::string& lcnnPathStr) {
     Py_Initialize();
     if (!Py_IsInitialized()) {
         std::cout << "Python initialization failed" << std::endl;
         return;
     }
 
-    // 获取可执行文件的路径
-    std::filesystem::path execPath = std::filesystem::current_path();
-
-    // 推导出项目根目录
-    std::filesystem::path projectRoot = execPath.parent_path().parent_path().parent_path(); // 假设三层上移到根目录
-    std::filesystem::path lcnnPath = projectRoot / "LCNN";
-    std::string lcnnPathStr = convertSlashes(lcnnPath.string());
-
     // 添加模块搜索路径
     PyRun_SimpleString("import sys");
-    PyRun_SimpleString(("sys.path.append('" + lcnnPathStr + "')").c_str());  // 动态添加路径
+    PyRun_SimpleString(("sys.path.append('" + lcnnPathStr + "')").c_str());
+}
+
+void finalizePython() {
+    Py_Finalize();
+}
+
+void processImageWithCutPy() {
+    std::string imagePath = "temp_output/range.png";
 
     // 导入模块
     PyObject* pModule = PyImport_ImportModule("demo");
@@ -264,5 +271,51 @@ void processImageWithDemoPy(const std::string& imagePath) {
     // 清理
     Py_XDECREF(pFunc);
     Py_DECREF(pModule);
-    Py_Finalize();
+}
+
+void processImageWithRangePy(const std::string& imagePath, glm::vec2 targetPoints[4]) {
+    // 导入模块
+    PyObject* pModule = PyImport_ImportModule("demo");
+    if (pModule == NULL) {
+        PyErr_Print();
+        std::cout << "Module not found" << std::endl;
+        return;
+    }
+
+    // 获取函数
+    PyObject* pFunc = PyObject_GetAttrString(pModule, "target_range");
+    if (!pFunc || !PyCallable_Check(pFunc)) {
+        PyErr_Print();
+        std::cout << "Function not found or not callable" << std::endl;
+        Py_DECREF(pModule);
+        return;
+    }
+
+    // 将参数转换为 Python 对象
+    string path = convertSlashes(imagePath);
+    const char* arg0 = path.c_str();
+    PyObject* pArgs = PyTuple_New(2);
+
+    // 将图像路径作为字符串传递
+    PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(arg0));
+
+    // 创建存储点的列表
+    PyObject* pPointsList = PyList_New(4);
+    for (int i = 0; i < 4; ++i) {
+        PyObject* pPoint = PyTuple_New(2);
+        PyTuple_SetItem(pPoint, 0, PyFloat_FromDouble(targetPoints[i].x));
+        PyTuple_SetItem(pPoint, 1, PyFloat_FromDouble(targetPoints[i].y));
+        PyList_SetItem(pPointsList, i, pPoint);
+    }
+
+    // 将列表作为第二个参数传递
+    PyTuple_SetItem(pArgs, 1, pPointsList);
+
+    // 调用函数
+    PyObject_CallObject(pFunc, pArgs);
+
+    // 清理
+    Py_XDECREF(pFunc);
+    Py_DECREF(pArgs);
+    Py_DECREF(pModule);
 }

@@ -5,6 +5,10 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <thread>
+#include <future>
+#include <atomic>
+#include <filesystem>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -28,6 +32,7 @@ public:
     void destory();
     void setAppWidth(int width) { appWidth = width; }
     void setAppHeight(int height) { appHeight = height; }
+    void createModels(const std::vector<std::string>& filePaths);
 
 private:
     Application();
@@ -44,12 +49,13 @@ private:
     unsigned int selecImgTexID;  // 存储选中的图片纹理ID
 
     void workspaceUI();
+    //void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4]);
 
     // 关于选定图片目标范围的变量
     bool selectTarget;
     int targetWidth, targetHeight;
-    glm::vec2 targetPoints[4]; // 用于记录最终的切分范围（上左，上右，下左，下右）
-    glm::vec2 nextTargetPoints[4]; // 用于记录切分过程中的切分范围（上左，上右，下左，下右）
+    glm::vec2 targetPoints[4]; // 用于记录最终的切分范围（上左，上右，下右，下左）
+    glm::vec2 nextTargetPoints[4]; // 用于记录切分过程中的切分范围（上左，上右，下右，下左）
     void selectTargetUI();
 
     // === Camera ===
@@ -67,5 +73,4 @@ private:
     void onMousePress(bool pressed); // 鼠标按下处理
     void mouse_callback(double xpos, double ypos);
     void scroll_callback(double yoffset);
-
 };
