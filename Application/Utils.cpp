@@ -6,6 +6,11 @@
 //namespace py = pybind11;
 using namespace std;
 
+// 全局变量来存储函数引用
+PyObject* pCutFunction = nullptr;
+PyObject* pTargetRangeFunction = nullptr;
+
+
 GLuint loadTexture(const char* path, bool if_flip) {
     GLuint textureID;
     glGenTextures(1, &textureID);
@@ -234,88 +239,90 @@ void initializePython(const std::string& lcnnPathStr) {
     // 添加模块搜索路径
     PyRun_SimpleString("import sys");
     PyRun_SimpleString(("sys.path.append('" + lcnnPathStr + "')").c_str());
+
+    // 导入模块并保存函数引用
+    PyObject* pModule = PyImport_ImportModule("demo");
+    if (pModule) {
+        pCutFunction = PyObject_GetAttrString(pModule, "cut");
+        pTargetRangeFunction = PyObject_GetAttrString(pModule, "target_range");
+        if (!pCutFunction || !PyCallable_Check(pCutFunction)) {
+            std::cout << "Cut function not found or not callable" << std::endl;
+        }
+        if (!pTargetRangeFunction || !PyCallable_Check(pTargetRangeFunction)) {
+            std::cout << "Target range function not found or not callable" << std::endl;
+        }
+        Py_DECREF(pModule); // 释放模块引用
+    }
+    else {
+        PyErr_Print();
+        std::cout << "Module not found" << std::endl;
+    }
 }
 
 void finalizePython() {
+    // 清理函数引用
+    Py_XDECREF(pCutFunction);
+    Py_XDECREF(pTargetRangeFunction);
     Py_Finalize();
 }
 
 void processImageWithCutPy() {
     std::string imagePath = "temp_output/range.png";
 
-    // 导入模块
-    PyObject* pModule = PyImport_ImportModule("demo");
-    if (pModule == NULL) {
-        PyErr_Print();
-        std::cout << "Module not found" << std::endl;
-        return;
+    // 获取 GIL
+    //PyGILState_STATE gstate = PyGILState_Ensure();
+
+    // 检查函数是否存在
+    if (pCutFunction) {
+        // 将参数转换为 Python 对象
+        PyObject* pArgs = PyTuple_New(1);
+        PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(imagePath.c_str()));
+
+        // 调用函数
+        PyObject_CallObject(pCutFunction, pArgs);
+
+        // 清理
+        Py_XDECREF(pArgs);
+    }
+    else {
+        std::cout << "Cut function not available" << std::endl;
     }
 
-    // 获取函数
-    PyObject* pFunc = PyObject_GetAttrString(pModule, "cut");
-    if (!pFunc || !PyCallable_Check(pFunc)) {
-        PyErr_Print();
-        std::cout << "Function not found or not callable" << std::endl;
-        Py_DECREF(pModule);
-        return;
-    }
-
-    // 将参数转换为 Python 对象
-    const char* arg0 = imagePath.c_str();
-    PyObject* pArgs = PyTuple_New(1);
-    PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(arg0));
-
-    // 调用函数
-    PyObject_CallObject(pFunc, pArgs);
-
-    // 清理
-    Py_XDECREF(pFunc);
-    Py_DECREF(pModule);
+    //PyGILState_Release(gstate); // 释放 GIL
 }
 
 void processImageWithRangePy(const std::string& imagePath, glm::vec2 targetPoints[4]) {
-    // 导入模块
-    PyObject* pModule = PyImport_ImportModule("demo");
-    if (pModule == NULL) {
-        PyErr_Print();
-        std::cout << "Module not found" << std::endl;
-        return;
+    // 获取 GIL
+    //PyGILState_STATE gstate = PyGILState_Ensure();
+
+    // 检查函数是否存在
+    if (pTargetRangeFunction) {
+        // 将参数转换为 Python 对象
+        std::string path = convertSlashes(imagePath);
+        PyObject* pArgs = PyTuple_New(2);
+        PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(path.c_str()));
+
+        // 创建存储点的列表
+        PyObject* pPointsList = PyList_New(4);
+        for (int i = 0; i < 4; ++i) {
+            PyObject* pPoint = PyTuple_New(2);
+            PyTuple_SetItem(pPoint, 0, PyFloat_FromDouble(targetPoints[i].x));
+            PyTuple_SetItem(pPoint, 1, PyFloat_FromDouble(targetPoints[i].y));
+            PyList_SetItem(pPointsList, i, pPoint); // 注意：这里是引用计数的管理，PyList_SetItem 会导致 pPoint 的引用计数增加
+        }
+
+        // 将列表作为第二个参数传递
+        PyTuple_SetItem(pArgs, 1, pPointsList);
+
+        // 调用函数
+        PyObject_CallObject(pTargetRangeFunction, pArgs);
+
+        // 清理
+        Py_XDECREF(pArgs);
+    }
+    else {
+        std::cout << "Target range function not available" << std::endl;
     }
 
-    // 获取函数
-    PyObject* pFunc = PyObject_GetAttrString(pModule, "target_range");
-    if (!pFunc || !PyCallable_Check(pFunc)) {
-        PyErr_Print();
-        std::cout << "Function not found or not callable" << std::endl;
-        Py_DECREF(pModule);
-        return;
-    }
-
-    // 将参数转换为 Python 对象
-    string path = convertSlashes(imagePath);
-    const char* arg0 = path.c_str();
-    PyObject* pArgs = PyTuple_New(2);
-
-    // 将图像路径作为字符串传递
-    PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(arg0));
-
-    // 创建存储点的列表
-    PyObject* pPointsList = PyList_New(4);
-    for (int i = 0; i < 4; ++i) {
-        PyObject* pPoint = PyTuple_New(2);
-        PyTuple_SetItem(pPoint, 0, PyFloat_FromDouble(targetPoints[i].x));
-        PyTuple_SetItem(pPoint, 1, PyFloat_FromDouble(targetPoints[i].y));
-        PyList_SetItem(pPointsList, i, pPoint);
-    }
-
-    // 将列表作为第二个参数传递
-    PyTuple_SetItem(pArgs, 1, pPointsList);
-
-    // 调用函数
-    PyObject_CallObject(pFunc, pArgs);
-
-    // 清理
-    Py_XDECREF(pFunc);
-    Py_DECREF(pArgs);
-    Py_DECREF(pModule);
+    //PyGILState_Release(gstate); // 释放 GIL
 }

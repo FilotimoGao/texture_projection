@@ -6,6 +6,9 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 #include <future>
 #include <atomic>
 #include <filesystem>
@@ -29,7 +32,7 @@ public:
 
     bool init(const int& width, const int& height);
     void update();
-    void destory();
+    void destroy();
     void setAppWidth(int width) { appWidth = width; }
     void setAppHeight(int height) { appHeight = height; }
     void createModels(const std::vector<std::string>& filePaths);
@@ -65,7 +68,7 @@ private:
     float deltaTime;    // 每帧时间间隔
     float lastFrame;    // 上一帧的时间
     bool isMousePressed; // 鼠标是否按下
-    
+
     std::vector<int> selectedModelIndices; // 存储选中的模型索引
 
     // 添加相机输入处理函数

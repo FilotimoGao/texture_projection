@@ -5,6 +5,27 @@ from PIL import Image, ImageDraw
 from scipy.ndimage import label
 import shutil
 
+def rgba_to_gray(region_pixels):
+    """
+    将 RGBA 图像转换为灰度图像。
+    参数:
+        region_pixels: RGBA 图像的 NumPy 数组，形状为 (height, width, 4)
+    返回:
+        gray_image: 灰度图像的 NumPy 数组，形状为 (height, width)
+    """
+    # 确保输入是一个有效的 RGBA 图像
+    if region_pixels.ndim != 3 or region_pixels.shape[2] != 4:
+        raise ValueError("输入图像必须是 RGBA 格式，形状为 (height, width, 4)")
+
+    # 使用加权平均法计算灰度值
+    gray_image = 0.299 * region_pixels[:, :, 0] + 0.587 * region_pixels[:, :, 1] + 0.114 * region_pixels[:, :, 2]
+
+    # 确保灰度图像的数据类型是整数
+    gray_image = gray_image.astype(np.uint8)
+
+    return gray_image
+
+
 def extend_line(x1, y1, x2, y2, width, height):
     """延长线段到整个图片边界"""
     if x1 == x2:  # 垂直线
@@ -155,7 +176,7 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100)
                     full_image.putpixel((j, i), tuple(region_pixels[i - y_min, j - x_min]))
 
         # 计算该区域的熵
-        gray_image = cv2.cvtColor(region_pixels, cv2.COLOR_RGBA2GRAY)  # 转换为灰度图像
+        gray_image = rgba_to_gray(region_pixels)
         glcm = calculate_glcm(gray_image)  # 计算 GLCM
         entropy = calculate_entropy(glcm)  # 计算熵
 

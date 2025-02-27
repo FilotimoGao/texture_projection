@@ -3,7 +3,7 @@
 int main() {
 	app->init(800, 600);
 	app->update();
-	app->destory();
+	app->destroy();
 
 	return 0;
 }

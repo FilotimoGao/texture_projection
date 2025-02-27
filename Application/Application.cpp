@@ -1,24 +1,38 @@
 #include "Application.h"
-#include<vector>
+#include <vector>
 #include <algorithm>
 #include <sstream>
 #include <utility>
+#include <thread>
+#include <atomic>
+#include <future>
+#include <filesystem>
 
 int model_num = 0;
 std::atomic<bool> isProcessing(false);
 std::atomic<bool> processCompleted(false);
-std::promise<std::vector<std::string>> modelPromise;
+std::promise<std::vector<std::string>> modelPromise; // 这里是声明
+std::future<std::vector<std::string>> modelFuture; // 声明 future
+
+// 声明一个线程来处理Python相关操作
+std::thread pythonThread;
+std::atomic<bool> pythonInitialized(false); // 标记Python是否已初始化
 
 void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4]) {
     isProcessing = true;
     processCompleted = false;
 
-    // 在这里进行 Python 处理
     std::string lcnnPathStr = convertPath("LCNN");
-    initializePython(lcnnPathStr);
+
+    // 确保Python已初始化
+    if (!pythonInitialized) {
+        initializePython(lcnnPathStr);
+        pythonInitialized = true;
+    }
+
+    // 处理图像
     processImageWithRangePy(imagePath, targetPoints);
     processImageWithCutPy();
-    finalizePython();
 
     // 加载结果图片
     std::vector<std::string> imageFiles;
@@ -30,10 +44,29 @@ void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4])
     }
 
     // 设置 promise 的值以传递结果
-    modelPromise.set_value(imageFiles);
+    try {
+        modelPromise.set_value(imageFiles);
+    }
+    catch (const std::future_error& e) {
+        std::cerr << "Future error: " << e.what() << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
 
     isProcessing = false;
     processCompleted = true;
+}
+
+void pythonWorker() {
+    // 这是Python线程的工作函数，用于初始化和终止Python
+    while (true) {
+        if (isProcessing) {
+            // 处理图像的代码在这里
+            // 由于该部分已在runImageProcessing中实现，无需在此额外实现
+            break; // 这是一个简化示例，实际应用可能需要更加复杂的控制
+        }
+    }
 }
 
 // 添加此函数以提取文件名中的数字
@@ -47,7 +80,6 @@ int extractNumberFromFilename(const std::string& filename) {
     return numberString.empty() ? -1 : std::stoi(numberString); // 如果没有数字则返回 -1
 }
 
-// 窗口大小调整回调
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     Application::getInstance()->setAppWidth(width); // 更新窗口宽度
     Application::getInstance()->setAppHeight(height); // 更新窗口高度
@@ -126,6 +158,10 @@ bool Application::init(const int& width, const int& height) {
     if (!loadShaders(shaderProgram)) {
         return false;
     }
+
+    // 启动Python子线程
+    pythonThread = std::thread(pythonWorker);
+
     return true;
 }
 
@@ -187,9 +223,7 @@ void Application::update() {
     }
 }
 
-
-
-void Application::destory() {
+void Application::destroy() {
     // 清理场景资源
     scene.clear();
 
@@ -197,6 +231,10 @@ void Application::destory() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    // 结束Python处理
+    isProcessing = true; // 发信号表示要停止Python处理
+    pythonThread.join(); // 等待Python线程结束
 
     // 销毁窗口并终止 GLFW
     glfwDestroyWindow(appWindow);
@@ -219,7 +257,8 @@ void Application::workspaceUI() {
     // ------ 上部：由python完成的模型切割工作，模型切割工作区开始 ------ //
     ImGui::Begin(u8"图片预处理(Image Preprocessing)", nullptr);
     ImGui::TextWrapped(u8"此功能区用于选择目标图片进行预处理，点击下方“Load”加载图片，仅限选择一张。");
-    ImGui::Spacing();ImGui::Spacing();
+    ImGui::Spacing();
+    ImGui::Spacing();
     if (ImGui::Button(u8"加载(Load)")) {
         ImGuiFileDialog::Instance()->OpenDialog(
             "ChooseImageForProcessing",
@@ -259,14 +298,22 @@ void Application::workspaceUI() {
         selectTargetUI();
 
         // 调用 demo.py 的按钮
-        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Spacing();
         ImGui::TextWrapped(u8"点击下方“Cut”，将调用LCNN进行楼梯图片剪切。");
         if (ImGui::Button(u8"剪切（Cut）")) {
             if (!selecImgPath.empty()) {
                 if (!isProcessing) {
+                    // 创建新的 promise 和 future 对象
+                    modelPromise = std::promise<std::vector<std::string>>(); // 创建新的 promise
+                    modelFuture = modelPromise.get_future(); // 获取对应的 future
+
                     // 创建并启动线程
                     std::thread processingThread(runImageProcessing, selecImgPath, targetPoints);
                     processingThread.detach(); // 使线程分离
+                }
+                else {
+                    std::cout << "Processing already in progress." << std::endl;
                 }
             }
             else {
@@ -274,19 +321,23 @@ void Application::workspaceUI() {
             }
         }
 
-        // 显示处理状态
-        ImGui::Spacing(); ImGui::Spacing();
+        // 显示处理状态和结果
         if (isProcessing) {
             ImGui::Text(u8"正在处理中……");
             ImGui::Text(u8"模型预测可能需要一些时间，请耐心等待……");
         }
         if (processCompleted) {
             ImGui::Text(u8"处理已完成！");
-            std::vector<std::string> imageFiles = modelPromise.get_future().get();
-            for (const auto& filePath : imageFiles) {
-                std::cout << "Loaded file: " << filePath << std::endl;
+            try {
+                std::vector<std::string> imageFiles = modelFuture.get(); // 获取处理结果
+                for (const auto& filePath : imageFiles) {
+                    std::cout << "Loaded file: " << filePath << std::endl;
+                }
+                createModels(imageFiles);
             }
-            createModels(imageFiles);
+            catch (const std::exception& e) {
+                std::cerr << "Error retrieving results: " << e.what() << std::endl;
+            }
             processCompleted = false; // 重置状态
         }
     }
@@ -533,7 +584,8 @@ void Application::selectTargetUI() {
             ImGui::GetWindowDrawList()->AddLine(ImVec2(paintPoints[3].x, paintPoints[3].y), ImVec2(paintPoints[0].x, paintPoints[0].y), IM_COL32(255, 0, 0, 255), 2.0f); // 3 -> 0
         }
 
-        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Spacing();
         if (ImGui::Button(u8"应用(Apply)")) {
             targetPoints[0] = nextTargetPoints[0];
             targetPoints[1] = nextTargetPoints[1];
@@ -548,7 +600,6 @@ void Application::selectTargetUI() {
         ImGui::End();
     }
 }
-
 
 void Application::createModels(const std::vector<std::string>& filePaths) {
     // 清理当前场景和选择的模型索引
@@ -573,8 +624,8 @@ void Application::createModels(const std::vector<std::string>& filePaths) {
     for (auto& [key, filePath] : filesWithNumbers) {
         std::vector<float> vertices = {
             -0.5f, -0.5f, -0.2f * (model_num + 1), 0.0f, 0.0f,
-             0.5f, -0.5f, -0.2f * (model_num + 1), 1.0f, 0.0f,
-             0.5f,  0.5f, -0.2f * (model_num + 1), 1.0f, 1.0f,
+            0.5f, -0.5f, -0.2f * (model_num + 1), 1.0f, 0.0f,
+            0.5f,  0.5f, -0.2f * (model_num + 1), 1.0f, 1.0f,
             -0.5f,  0.5f, -0.2f * (model_num + 1), 0.0f, 1.0f
         };
         std::vector<unsigned int> indices = {
@@ -596,7 +647,6 @@ void Application::createModels(const std::vector<std::string>& filePaths) {
         model_num++;
     }
 }
-
 
 Application::Application()
     : appWidth(0), appHeight(0), appWindow(nullptr), shaderProgram(0),
@@ -639,6 +689,7 @@ void Application::onMousePress(bool pressed) {
         }
     }
 }
+
 void Application::mouse_callback(double xpos, double ypos) {
     // 检查鼠标是否在 OpenGL 渲染区域内（右侧 70% 区域）
     if (xpos > appWidth * 0.3f) {
@@ -661,4 +712,3 @@ void Application::scroll_callback(double yoffset) {
     }
     camera.ProcessMouseScroll(yoffset);
 }
-
