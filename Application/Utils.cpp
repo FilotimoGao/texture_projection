@@ -63,47 +63,45 @@ GLuint loadTexture(const char* path, int& width, int& height, bool if_flip) {
     GLuint textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
-
     // 设置纹理参数
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-
-    // 设置边界颜色
-    float borderColor[] = { 1.0f, 1.0f, 1.0f, 0.0f }; // RGBA 白色
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 0.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-
-    // 设置纹理过滤模式
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
     // 加载图片
-    int channels;
     stbi_set_flip_vertically_on_load(if_flip);
+    int channels;
     unsigned char* data = stbi_load(path, &width, &height, &channels, 0);
-    if (data) {
-        GLenum format;
-        if (channels == 1)
-            format = GL_RED;  // 灰度图
-        else if (channels == 3)
-            format = GL_RGB;  // RGB 图
-        else if (channels == 4)
-            format = GL_RGBA; // RGBA 图
-        else {
-            cout << "Unsupported texture format: " << path << endl;
-            stbi_image_free(data);
-            glDeleteTextures(1, &textureID);
-            return 0;
+    if (!data) {
+        std::cerr << "Failed to load texture: " << path << std::endl;
+        glDeleteTextures(1, &textureID);
+        return 0;
+    }
+    // 如果图片不是 4 通道，手动转换为 RGBA
+    unsigned char* rgbaData = nullptr;
+    if (channels != 4) {
+        rgbaData = new unsigned char[width * height * 4];
+        for (int i = 0; i < width * height; ++i) {
+            rgbaData[i * 4 + 0] = data[i * channels + 0]; // R
+            rgbaData[i * 4 + 1] = data[i * channels + 1]; // G
+            rgbaData[i * 4 + 2] = data[i * channels + 2]; // B
+            rgbaData[i * 4 + 3] = 255; // A
         }
-
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
+        stbi_image_free(data);
+        data = rgbaData;
+    }
+    // 加载纹理数据
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    // 释放数据
+    if (rgbaData) {
+        delete[] rgbaData;
     }
     else {
-        cout << "Failed to load texture: " << path << endl;
-        glDeleteTextures(1, &textureID); // 失败时清理纹理
-        return 0; // 返回 0 表示加载失败
+        stbi_image_free(data);
     }
-    stbi_image_free(data);
     return textureID;
 }
 

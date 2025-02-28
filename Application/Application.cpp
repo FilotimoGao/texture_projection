@@ -15,7 +15,7 @@ std::promise<std::vector<std::string>> modelPromise; // 这里是声明
 std::future<std::vector<std::string>> modelFuture; // 声明 future
 
 // 声明一个线程来处理Python相关操作
-std::thread pythonThread;
+//std::thread pythonThread;
 std::atomic<bool> pythonInitialized(false); // 标记Python是否已初始化
 
 void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4]) {
@@ -58,16 +58,6 @@ void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4])
     processCompleted = true;
 }
 
-void pythonWorker() {
-    // 这是Python线程的工作函数，用于初始化和终止Python
-    while (true) {
-        if (isProcessing) {
-            // 处理图像的代码在这里
-            // 由于该部分已在runImageProcessing中实现，无需在此额外实现
-            break; // 这是一个简化示例，实际应用可能需要更加复杂的控制
-        }
-    }
-}
 
 // 添加此函数以提取文件名中的数字
 int extractNumberFromFilename(const std::string& filename) {
@@ -160,7 +150,7 @@ bool Application::init(const int& width, const int& height) {
     }
 
     // 启动Python子线程
-    pythonThread = std::thread(pythonWorker);
+    //pythonThread = std::thread(pythonWorker);
 
     return true;
 }
@@ -224,23 +214,24 @@ void Application::update() {
 }
 
 void Application::destroy() {
+    std::cout << "Destroying application..." << std::endl;
+
     // 清理场景资源
     scene.clear();
-
+    std::cout << "Scene cleared." << std::endl;
     // 清理 ImGui
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
-
-    // 结束Python处理
-    isProcessing = true; // 发信号表示要停止Python处理
-    pythonThread.join(); // 等待Python线程结束
+    std::cout << "ImGui destroyed." << std::endl;
 
     // 销毁窗口并终止 GLFW
     glfwDestroyWindow(appWindow);
+    std::cout << "Window destroyed." << std::endl;
     glfwTerminate();
+    std::cout << "GLFW terminated." << std::endl;
+    std::cout << "Application destroyed successfully." << std::endl;
 }
-
 
 void Application::workspaceUI() {
     IGFD::FileDialogConfig config;
@@ -263,7 +254,7 @@ void Application::workspaceUI() {
         ImGuiFileDialog::Instance()->OpenDialog(
             "ChooseImageForProcessing",
             "Choose Image",
-            ".png,.jpg,.jpeg",
+            "Images{.png,.jpg,.jpeg}",
             config
         );
     }
@@ -302,44 +293,41 @@ void Application::workspaceUI() {
         ImGui::Spacing();
         ImGui::TextWrapped(u8"点击下方“Cut”，将调用LCNN进行楼梯图片剪切。");
         if (ImGui::Button(u8"剪切（Cut）")) {
-            if (!selecImgPath.empty()) {
-                if (!isProcessing) {
-                    // 创建新的 promise 和 future 对象
-                    modelPromise = std::promise<std::vector<std::string>>(); // 创建新的 promise
-                    modelFuture = modelPromise.get_future(); // 获取对应的 future
+        if (!selecImgPath.empty()) {
+            if (!isProcessing) {
+                // 创建新的 promise 和 future 对象
+                modelPromise = std::promise<std::vector<std::string>>(); // 创建新的 promise
+                modelFuture = modelPromise.get_future(); // 获取对应的 future
 
-                    // 创建并启动线程
-                    std::thread processingThread(runImageProcessing, selecImgPath, targetPoints);
-                    processingThread.detach(); // 使线程分离
-                }
-                else {
-                    std::cout << "Processing already in progress." << std::endl;
-                }
+                // 创建并启动线程
+                std::thread processingThread(runImageProcessing, selecImgPath, targetPoints);
+                processingThread.detach(); // 使线程分离
+            } else {
+                std::cout << "Processing already in progress." << std::endl;
             }
-            else {
-                ImGui::Text("Please select an image first!");
-            }
+        } else {
+            ImGui::Text("Please select an image first!");
         }
+    }
 
-        // 显示处理状态和结果
-        if (isProcessing) {
-            ImGui::Text(u8"正在处理中……");
-            ImGui::Text(u8"模型预测可能需要一些时间，请耐心等待……");
-        }
-        if (processCompleted) {
-            ImGui::Text(u8"处理已完成！");
-            try {
-                std::vector<std::string> imageFiles = modelFuture.get(); // 获取处理结果
-                for (const auto& filePath : imageFiles) {
-                    std::cout << "Loaded file: " << filePath << std::endl;
-                }
-                createModels(imageFiles);
+    // 显示处理状态和结果
+    if (isProcessing) {
+        ImGui::Text(u8"正在处理中……");
+        ImGui::Text(u8"模型预测可能需要一些时间，请耐心等待……");
+    }
+    if (processCompleted) {
+        ImGui::Text(u8"处理已完成！");
+        try {
+            std::vector<std::string> imageFiles = modelFuture.get(); // 获取处理结果
+            for (const auto& filePath : imageFiles) {
+                std::cout << "Loaded file: " << filePath << std::endl;
             }
-            catch (const std::exception& e) {
-                std::cerr << "Error retrieving results: " << e.what() << std::endl;
-            }
-            processCompleted = false; // 重置状态
+            createModels(imageFiles);
+        } catch (const std::exception& e) {
+            std::cerr << "Error retrieving results: " << e.what() << std::endl;
         }
+        processCompleted = false; // 重置状态
+    }
     }
 
     // 处理文件选择对话框
@@ -382,6 +370,17 @@ void Application::workspaceUI() {
             }
         }
     }
+
+    // 添加全选按钮
+    if (model_num > 0) {
+        if (ImGui::Button(u8"全选 (Select All)")) {
+            selectedModelIndices.clear();
+            for (size_t i = 0; i < model_num; ++i) {
+                selectedModelIndices.push_back(i); // 添加所有模型的索引
+            }
+        }
+    }
+
     // 如果有选中的模型，显示批量控制面板
     if (!selectedModelIndices.empty()) {
         ImGui::Separator();
@@ -441,7 +440,7 @@ void Application::workspaceUI() {
                 ImGuiFileDialog::Instance()->OpenDialog(
                     "ChooseBatchTexture",
                     "Choose Texture",
-                    ".png,.jpg,.jpeg",
+                    "Images{.png,.jpg,.jpeg}",
                     config
                 );
             }
@@ -469,7 +468,7 @@ void Application::workspaceUI() {
         ImGuiFileDialog::Instance()->OpenDialog(
             "ChooseImages",
             "Choose Images",
-            ".png,.jpg,.jpeg",
+            "Images{.png,.jpg,.jpeg}",
             config
         );
     }

@@ -50,6 +50,17 @@ def extend_line(x1, y1, x2, y2, width, height):
 
     return (x_start, y_start), (x_end, y_end)
 
+
+def is_line_too_vertical(start, end, threshold=5):
+    """判断线段是否过于竖直（即斜率的绝对值太大）"""
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    if dx == 0:  # 垂直线
+        return True
+    slope = dy / dx
+    return abs(slope) > threshold  # 如果斜率的绝对值大于阈值，则认为过于竖直
+
+
 def draw_lines(image, lines, extended_lines, output_path):
     """绘制原始线段和延长线段到图像上"""
     draw = ImageDraw.Draw(image)
@@ -106,7 +117,7 @@ def clear_output_directory(output_dir):
     os.makedirs(output_dir)  # 重新创建目录
 
 
-def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100):
+def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100, slope_threshold=5):
     """根据延长线段分割图片并保存为透明背景的部分"""
     img = Image.open(image_path).convert("RGBA")
     width, height = img.size
@@ -120,13 +131,13 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100)
     extended_lines = []
     # 生成延长线段并绘制
     for (start, end) in lines:
+        if is_line_too_vertical(start, end, slope_threshold):
+            print(f"线段 {start} 到 {end} 被过滤掉，因为它过于竖直。")
+            continue  # 如果线段过于竖直则跳过
+        
         extended_start, extended_end = extend_line(start[0], start[1], end[0], end[1], width, height)
         extended_lines.append((extended_start, extended_end))
         draw.line([extended_start, extended_end], fill=255, width=3)
-
-    # 绘制原始线段和延长线段到一张新图像上
-    # visual_image = img.copy()
-    # draw_lines(visual_image, lines, extended_lines, os.path.join(output_dir, 'lines_visualization.png'))
 
     mask_data = np.array(mask_img)
 
@@ -180,6 +191,7 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100)
         glcm = calculate_glcm(gray_image)  # 计算 GLCM
         entropy = calculate_entropy(glcm)  # 计算熵
 
+        print(f"区域 {new_index} 的熵 {entropy:.2f}")
         if entropy < 5.0:
             print(f"区域 {new_index} 的熵 {entropy:.2f} 小于 5.0，已被过滤。")
             continue  # 如果熵小于5.0，则跳过该区域
@@ -188,4 +200,3 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100)
         full_image.save(os.path.join(output_dir, f"{new_index}.png"))
 
     print(f"分割完成，共生成 {len(regions)} 个区域，并保存到 '{output_dir}' 文件夹中。")
-
