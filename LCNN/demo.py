@@ -119,14 +119,14 @@ def cut(imname):
     flines = []
     fscores = []
     for (a, b), s in zip(nlines, nscores):
-        if s < 0.85:
+        if s < 0.9:
             continue
         flines.append(((a[1], a[0]), (b[1], b[0])))
         fscores.append(nscores)
     
     # 调用分割函数
     output_directory = "temp_output"
-    segment_image_by_extended_lines(imname, flines, output_directory, min_size=300)
+    segment_image_by_extended_lines(imname, flines, output_directory, min_ratio=5e-4)
 
 
 def target_range(image_path, points):
@@ -136,26 +136,27 @@ def target_range(image_path, points):
     
     img_width, img_height = image.size
     pixel_points = [(int(x * img_width), int(y * img_height)) for x, y in points]
-
     # 计算目标矩形的最小和最大坐标
     min_x = min(x for x, y in pixel_points)
     min_y = min(y for x, y in pixel_points)
     max_x = max(x for x, y in pixel_points)
     max_y = max(y for x, y in pixel_points)
-
     # 计算裁剪区域的宽和高
     target_width = max_x - min_x
     target_height = max_y - min_y
-
     # 创建一个透明的图像，尺寸为最小矩形
     transparent_image = Image.new("RGBA", (target_width, target_height), (0, 0, 0, 0))
-
+    # 创建一个掩码，用于保留框选区域
+    mask = Image.new("L", (target_width, target_height), 0)  # 全黑的掩码
+    draw = ImageDraw.Draw(mask)
+    # 将框选区域的点转换为相对于最小矩形的坐标
+    relative_points = [(x - min_x, y - min_y) for x, y in pixel_points]
+    # 在掩码上绘制多边形，填充为白色（表示保留区域）
+    draw.polygon(relative_points, fill=255)
     # 从原图中裁剪出选中区域
     selected_region = image.crop((min_x, min_y, max_x, max_y))
-
-    # 将选中区域粘贴到透明图像上
-    transparent_image.paste(selected_region, (0, 0))
-
+    # 将选中区域粘贴到透明图像上，使用掩码保留框选区域
+    transparent_image.paste(selected_region, (0, 0), mask=mask)
     # 保存结果
     output_dir = "temp_output"
     os.makedirs(output_dir, exist_ok=True)

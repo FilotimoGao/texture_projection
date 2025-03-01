@@ -117,10 +117,11 @@ def clear_output_directory(output_dir):
     os.makedirs(output_dir)  # 重新创建目录
 
 
-def segment_image_by_extended_lines(image_path, lines, output_dir, min_size=100, slope_threshold=5):
+def segment_image_by_extended_lines(image_path, lines, output_dir, min_ratio=2e-4, slope_threshold=5):
     """根据延长线段分割图片并保存为透明背景的部分"""
     img = Image.open(image_path).convert("RGBA")
     width, height = img.size
+    min_size = min_ratio * width * height
     img_data = np.array(img)
     clear_output_directory(output_dir)  # 清空输出文件夹
 

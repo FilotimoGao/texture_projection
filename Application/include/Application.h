@@ -37,6 +37,8 @@ public:
     void setAppHeight(int height) { appHeight = height; }
     void createModels(const std::vector<std::string>& filePaths);
 
+    friend void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+
 private:
     Application();
     static Application* instance;

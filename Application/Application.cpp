@@ -71,8 +71,8 @@ int extractNumberFromFilename(const std::string& filename) {
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-    Application::getInstance()->setAppWidth(width); // 更新窗口宽度
-    Application::getInstance()->setAppHeight(height); // 更新窗口高度
+    app->setAppWidth(width); // 更新窗口宽度
+    app->setAppHeight(height); // 更新窗口高度
     glViewport(width * 0.3f, 0, width * 0.7f, height); // 设置 OpenGL 渲染区域
 }
 
@@ -171,7 +171,7 @@ void Application::update() {
         glm::mat4 view = camera.GetViewMatrix(); // 使用相机类生成视图矩阵
         glm::mat4 projection = glm::perspective(
             glm::radians(camera.Zoom),
-            (float)appWidth / (float)appHeight,
+            (float)appWidth * 0.7f / (float)appHeight,
             0.1f,
             100.0f
         );
@@ -621,11 +621,13 @@ void Application::createModels(const std::vector<std::string>& filePaths) {
 
     // 遍历排序后的文件并创建模型
     for (auto& [key, filePath] : filesWithNumbers) {
+        // 假设你想将模型在 Z 轴上向外移动 2.0f
+        float zOffset = -0.2f * (model_num + 10); // 负值使模型距离原点更远
         std::vector<float> vertices = {
-            -0.5f, -0.5f, -0.2f * (model_num + 1), 0.0f, 0.0f,
-            0.5f, -0.5f, -0.2f * (model_num + 1), 1.0f, 0.0f,
-            0.5f,  0.5f, -0.2f * (model_num + 1), 1.0f, 1.0f,
-            -0.5f,  0.5f, -0.2f * (model_num + 1), 0.0f, 1.0f
+            -0.5f, -0.5f, zOffset, 0.0f, 0.0f,
+            0.5f, -0.5f, zOffset, 1.0f, 0.0f,
+            0.5f,  0.5f, zOffset, 1.0f, 1.0f,
+            -0.5f,  0.5f, zOffset, 0.0f, 1.0f
         };
         std::vector<unsigned int> indices = {
             0, 1, 2,
@@ -646,6 +648,7 @@ void Application::createModels(const std::vector<std::string>& filePaths) {
         model_num++;
     }
 }
+
 
 Application::Application()
     : appWidth(0), appHeight(0), appWindow(nullptr), shaderProgram(0),
