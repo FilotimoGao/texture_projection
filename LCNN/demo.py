@@ -38,7 +38,7 @@ def c(x):
 def cut(imname):
     print("cut start!")
     config_file = "D:/CG/Texture_projection/LCNN/config/wireframe.yaml"
-    checkpoint_file = "D:/CG/Texture_projection/LCNN/checkpoint/checkpoint_best_2.pth"
+    checkpoint_file = "D:/CG/Texture_projection/LCNN/checkpoint/checkpoint_best_3.pth"
     print("C.update!")
     C.update(C.from_yaml(filename=config_file))
     print("M.update!")

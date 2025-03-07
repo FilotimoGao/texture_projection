@@ -132,28 +132,30 @@ bool loadShaders(GLuint& shaderProgram) {
     // 片段着色器代码
     const char* fragmentShaderSource = R"(
     #version 330 core
-    in vec2 TexCoords;
-    in vec4 ProjectedCoords;
+    in vec2 TexCoords;                          // 从顶点着色器传入的纹理坐标
+    in vec4 ProjectedCoords;                    // 从顶点着色器传入的投影坐标
 
-    uniform sampler2D texture1;         // 默认纹理
-    uniform sampler2D projectionTexture; // 投影纹理
-    uniform int textureMode;            // 纹理模式 (0: UV 映射, 1: 投影映射)
+    uniform sampler2D texture1;                 // 默认纹理
+    uniform sampler2D projectionTexture;         // 投影纹理
+    uniform int textureMode;                     // 纹理模式 (0: UV 映射, 1: 投影映射)
+    uniform float projectionAspectRatio;         // 投影纹理长宽比
 
-    out vec4 FragColor;
+    out vec4 FragColor;                          // 输出的片段颜色
 
     void main() {
         vec4 texColor;
 
         if (textureMode == 0) { // UV 映射
-            texColor = texture(texture1, TexCoords);
+            texColor = texture(texture1, TexCoords); // 使用默认纹理和纹理坐标
         } else { // 投影映射
-            vec3 projCoords = ProjectedCoords.xyz / ProjectedCoords.w;
+            vec3 projCoords = ProjectedCoords.xyz / ProjectedCoords.w; // 透视除法
+            projCoords.x *= projectionAspectRatio; // 根据长宽比调整 x 坐标
             projCoords = projCoords * 0.5 + 0.5; // [-1, 1] 转换到 [0, 1]
 
             if (projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0) {
                 texColor = vec4(0.0, 0.0, 0.0, 0.0); // 超出范围返回完全透明
             } else {
-                texColor = texture(projectionTexture, projCoords.xy);
+                texColor = texture(projectionTexture, projCoords.xy); // 使用投影纹理
             }
         }
 
@@ -162,7 +164,7 @@ bool loadShaders(GLuint& shaderProgram) {
             discard; // 透明部分丢弃，不渲染
         }
 
-        FragColor = texColor; // 使用纹理颜色和透明度
+        FragColor = texColor; // 设置片段颜色
     }
     )";
 

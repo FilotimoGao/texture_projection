@@ -23,7 +23,7 @@ Testing/
 cmake_install.cmake
 
 # 忽略模型权重
-LCNN/checkpoint/checkpoint_best_2.pth
+LCNN/checkpoint/
 
 # 系统生成的文件
 .DS_Store

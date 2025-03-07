@@ -2,7 +2,9 @@ import os
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
-from scipy.ndimage import label
+from scipy.ndimage import label, gaussian_filter, binary_dilation, binary_erosion
+from skimage.filters import sobel
+from skimage.measure import find_contours
 import shutil
 
 def rgba_to_gray(region_pixels):
@@ -103,6 +105,49 @@ def calculate_glcm(image, distance=1, angle=0):
 
     return glcm
 
+def detect_text_in_fragment(image_fragment):
+    """判断图像碎片中是否存在文字"""
+    # 转换为灰度图（假设输入是 RGB 图像）
+    if len(image_fragment.shape) == 3:
+        gray = np.mean(image_fragment, axis=2).astype(np.uint8)
+    else:
+        gray = image_fragment
+
+    # 边缘检测（使用 Sobel 算子）
+    edges = sobel(gray)
+
+    # 二值化边缘
+    edges_binary = (edges > 0.1).astype(np.uint8)
+
+    # 形态学操作（膨胀，增强文字连通性）
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    dilated_edges = binary_dilation(edges_binary, structure=kernel)
+
+    # 查找轮廓
+    contours = find_contours(dilated_edges, level=0.5)
+
+    # 分析轮廓特征
+    text_like_contours = 0
+    for contour in contours:
+        # 计算轮廓面积
+        area = contour.shape[0]
+        # 计算轮廓的边界矩形
+        x_min, y_min = np.min(contour, axis=0)
+        x_max, y_max = np.max(contour, axis=0)
+        w = x_max - x_min
+        h = y_max - y_min
+        # 计算长宽比
+        aspect_ratio = float(w) / h if h != 0 else 0
+        # 计算紧凑度（面积与边界矩形面积的比值）
+        compactness = area / (w * h) if w * h != 0 else 0
+        # 判断是否为文字轮廓
+        if area < 100 and 0.2 < aspect_ratio < 5 and compactness > 0.2:
+            text_like_contours += 1
+
+    # 判断是否存在文字
+    print("text_like_contours: ", text_like_contours)
+    return text_like_contours > 0  # 设定阈值
+
 def calculate_entropy(glcm):
     """计算 GLCM 的熵"""
     glcm_normalized = glcm / np.sum(glcm)  # 归一化
@@ -117,7 +162,7 @@ def clear_output_directory(output_dir):
     os.makedirs(output_dir)  # 重新创建目录
 
 
-def segment_image_by_extended_lines(image_path, lines, output_dir, min_ratio=2e-4, slope_threshold=5):
+def segment_image_by_extended_lines(image_path, lines, output_dir, min_ratio=10e-4, slope_threshold=5):
     """根据延长线段分割图片并保存为透明背景的部分"""
     img = Image.open(image_path).convert("RGBA")
     width, height = img.size
@@ -196,6 +241,13 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_ratio=2e-
         if entropy < 5.0:
             print(f"区域 {new_index} 的熵 {entropy:.2f} 小于 5.0，已被过滤。")
             continue  # 如果熵小于5.0，则跳过该区域
+        '''
+        # 判断是否存在文字
+        if detect_text_in_fragment(region_pixels):
+            print("图像碎片中存在文字")
+        else:
+            print("图像碎片中不存在文字")
+        '''
 
         # 保存图片，文件名使用 y_min 和 y_max 的平均值排序的顺序
         full_image.save(os.path.join(output_dir, f"{new_index}.png"))

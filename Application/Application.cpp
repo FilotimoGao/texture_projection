@@ -18,6 +18,9 @@ std::future<std::vector<std::string>> modelFuture; // 声明 future
 //std::thread pythonThread;
 std::atomic<bool> pythonInitialized(false); // 标记Python是否已初始化
 
+float projectionAspectRatio = 1.0f; // 默认投影纹理长宽比
+float zOffsetFactor = 0.2f; // 用于控制模型面片之间的距离
+
 void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4]) {
     isProcessing = true;
     processCompleted = false;
@@ -188,6 +191,10 @@ void Application::update() {
         GLuint projLoc = glGetUniformLocation(shaderProgram, "projection");
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        // 设置投影纹理长宽比
+        GLuint projectionAspectRatioLoc = glGetUniformLocation(shaderProgram, "projectionAspectRatio");
+        glUniform1f(projectionAspectRatioLoc, projectionAspectRatio);
+
         // ---- 渲染每个模型 ----
         for (int i = 0; i < model_num; ++i) {
             Model* model = scene.getModel(i);
@@ -411,7 +418,26 @@ void Application::workspaceUI() {
                     }
                 }
             }
+            // 添加控制 zOffset 的滑块
+            ImGui::Text(u8"调整 Z 轴偏移 (Z Offset Factor):");
+            if (ImGui::SliderFloat(u8"Z Offset Factor", &zOffsetFactor, -1.0f, 1.0f)) {
+                // 滑块值改变时更新所有模型的 Z 轴位置
+                for (int i = 0; i < model_num; ++i) {
+                    Model* model = scene.getModel(i);
+                    if (model) {
+                        // 根据当前索引和 zOffsetFactor 更新模型的 Z 轴位置
+                        float newZOffset = -zOffsetFactor * i - 2; // 使用 i 来计算每个模型的 Z 轴偏移
+                        glm::vec3 currentPosition = model->getTransform().position;
+                        currentPosition.z = newZOffset; // 更新 Z 轴位置
+                        Transform newTransform = model->getTransform();
+                        newTransform.position = currentPosition; // 更新 transform
+                        model->setTransform(newTransform); // 设置新的变换
+                    }
+                }
+            }
         }
+
+
         // ---- 2. 批量修改纹理 ----
         static unsigned int batchDefaultTexture = 0;
         static unsigned int batchProjectionTexture = 0;
@@ -435,6 +461,12 @@ void Application::workspaceUI() {
                     }
                 }
             }
+
+            // 投影纹理长宽比调整
+            ImGui::Text(u8"调整投影纹理长宽比:");
+            ImGui::SliderFloat(u8"投影纹理长宽比 (Projection Aspect Ratio)", &projectionAspectRatio, 0.1f, 5.0f);
+
+
             ImGui::Separator();
             if (ImGui::Button(u8"重设纹理(Texture Reset)")) {
                 ImGuiFileDialog::Instance()->OpenDialog(
@@ -622,7 +654,7 @@ void Application::createModels(const std::vector<std::string>& filePaths) {
     // 遍历排序后的文件并创建模型
     for (auto& [key, filePath] : filesWithNumbers) {
         // 假设你想将模型在 Z 轴上向外移动 2.0f
-        float zOffset = -0.2f * (model_num + 10); // 负值使模型距离原点更远
+        float zOffset = -zOffsetFactor * model_num - 2; // 使用 zOffsetFactor
         std::vector<float> vertices = {
             -0.5f, -0.5f, zOffset, 0.0f, 0.0f,
             0.5f, -0.5f, zOffset, 1.0f, 0.0f,
