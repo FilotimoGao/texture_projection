@@ -419,7 +419,7 @@ void Application::workspaceUI() {
                 }
             }
             // 添加控制 zOffset 的滑块
-            ImGui::Text(u8"调整 Z 轴偏移 (Z Offset Factor):");
+            ImGui::TextWrapped(u8"调整 Z 轴偏移，可改变楼梯的坡度:");
             if (ImGui::SliderFloat(u8"Z Offset Factor", &zOffsetFactor, -1.0f, 1.0f)) {
                 // 滑块值改变时更新所有模型的 Z 轴位置
                 for (int i = 0; i < model_num; ++i) {
@@ -463,7 +463,7 @@ void Application::workspaceUI() {
             }
 
             // 投影纹理长宽比调整
-            ImGui::Text(u8"调整投影纹理长宽比:");
+            ImGui::TextWrapped(u8"调整投影纹理长宽比:");
             ImGui::SliderFloat(u8"投影纹理长宽比 (Projection Aspect Ratio)", &projectionAspectRatio, 0.1f, 5.0f);
 
 

@@ -20,7 +20,7 @@
 ![alt text](pics/3月1号成果（剪切）.png)
 
 - 步骤三：模型转换与视察。切换工作区到`“3D模型控制”`窗口，工作区窗口会展示所有显示的Model，并且按照自下而上的顺序排列，点击即可选中，可以通过`ctrl`进行多选，也可以点击`"全选"`同时选中。选中后可以进行模型基础转换和纹理更替（支持基础uv映射和投影映射）。操作鼠标（点击拖动改变相机角度和滚轮调整视口）和键盘（WASD调整相机左右和远近）可以更改相机位置。重新自己选择图片作为纹理也可，注意图片必须按照自下而上数字命名。
-![alt text](pics/3月1号成果（模型）.png)
+![alt text](pics/3月10号成果（转换）.png)
 
 
 ## 依赖
@@ -36,9 +36,14 @@
 
 ## 注意事项
 
-导入的图片务必不能是中文路径，否则无法在ImGuiFileDialog打开的文件选择对话框找到
+1. 导入的图片务必不能是中文路径，否则无法在ImGuiFileDialog打开的文件选择对话框找到
+2. 调用L-CNN需要一些依赖的Python库，请在配置时注意
+3. 在LCNN/demo.py中有两个绝对路径，注意修改为自己的路径
+4. 本项目在Visual Studio上开发，路径处理依赖了Application/utils.cpp中的convertPath()函数，请根据自己的开发工具修改该函数
+5. 项目中的checkpoint_best_2.pth没有放入仓库内，可以到 https://huggingface.co/spaces/FilotimoGao/3DStairProcess/blob/main/checkpoint/checkpoint_best_2.pth 进行下载
+6. 当前版本的项目已经打包好，不想自己从头编译可以直接在 https://huggingface.co/spaces/FilotimoGao/3DStairProcess/tree/main/Release 下载msi和exe文件，一键安装，运行前同样需要注意第2点
 
 ## 待解决问题
 
-- 程序假如进行“剪切(Cut)”完成后，点击右上角的叉退出不能结束进程，需要强制退出
-- 对3D模型界面的相机控制可以进一步优化以提高用户的使用手感
+1. 程序假如进行“剪切(Cut)”完成后，点击右上角的叉退出不能结束进程，需要强制退出
+2. 对3D模型界面的相机控制可以进一步优化以提高用户的使用手感

@@ -38,7 +38,7 @@ def c(x):
 def cut(imname):
     print("cut start!")
     config_file = "D:/CG/Texture_projection/LCNN/config/wireframe.yaml"
-    checkpoint_file = "D:/CG/Texture_projection/LCNN/checkpoint/checkpoint_best_3.pth"
+    checkpoint_file = "D:/CG/Texture_projection/LCNN/checkpoint/checkpoint_best_2.pth"
     print("C.update!")
     C.update(C.from_yaml(filename=config_file))
     print("M.update!")
@@ -126,7 +126,7 @@ def cut(imname):
     
     # 调用分割函数
     output_directory = "temp_output"
-    segment_image_by_extended_lines(imname, flines, output_directory, min_ratio=5e-4)
+    segment_image_by_extended_lines(imname, flines, output_directory, min_ratio=2e-2)
 
 
 def target_range(image_path, points):
