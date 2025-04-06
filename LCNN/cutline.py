@@ -238,7 +238,7 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_ratio=10e
         entropy = calculate_entropy(glcm)  # 计算熵
 
         print(f"区域 {new_index} 的熵 {entropy:.2f}")
-        if entropy < 5.0:
+        if entropy < 1.0: # 5.0
             print(f"区域 {new_index} 的熵 {entropy:.2f} 小于 5.0，已被过滤。")
             continue  # 如果熵小于5.0，则跳过该区域
         '''
@@ -248,6 +248,71 @@ def segment_image_by_extended_lines(image_path, lines, output_dir, min_ratio=10e
         else:
             print("图像碎片中不存在文字")
         '''
+
+        # 保存图片，文件名使用 y_min 和 y_max 的平均值排序的顺序
+        full_image.save(os.path.join(output_dir, f"{new_index}.png"))
+
+    print(f"分割完成，共生成 {len(regions)} 个区域，并保存到 '{output_dir}' 文件夹中。")
+
+
+def segment(image_path, lines):
+    """根据延长线段分割图片并保存为透明背景的部分"""
+    output_dir = "temp_output"
+    img = Image.open(image_path).convert("RGBA")
+    width, height = img.size
+    img_data = np.array(img)
+    clear_output_directory(output_dir)  # 清空输出文件夹
+
+    # 创建一张蒙版图像
+    mask_img = Image.new("L", (width, height), 0)  # 黑白图像
+    draw = ImageDraw.Draw(mask_img)
+
+    extended_lines = []
+    # 生成延长线段并绘制
+    for (start, end) in lines:
+        extended_start, extended_end = extend_line(start[0], start[1], end[0], end[1], width, height)
+        extended_lines.append((extended_start, extended_end))
+        draw.line([extended_start, extended_end], fill=255, width=3)
+
+    mask_data = np.array(mask_img)
+
+    # 连通区域检测
+    labeled, num_features = label(mask_data == 0)
+
+    # 提取和保存每个区域
+    os.makedirs(output_dir, exist_ok=True)
+    regions = []  # 存储区域信息，包含最小 y 坐标和区域标签
+
+    for region_label in range(1, num_features + 1):
+        region_mask = labeled == region_label
+        y_indices, x_indices = np.where(region_mask)
+        
+        if len(x_indices) == 0 or len(y_indices) == 0:
+            continue
+        
+        x_min, x_max = x_indices.min(), x_indices.max()
+        y_min, y_max = y_indices.min(), y_indices.max()
+
+        # 将区域信息（包括 y_min 和 y_max）存储到 regions 列表中
+        regions.append((y_min, y_max, region_label, x_min, x_max))
+
+    # 根据 y_min 和 y_max 的平均值排序
+    regions.sort(key=lambda r: (r[0] + r[1]) / 2, reverse=True)  # r[0] 是 y_min, r[1] 是 y_max
+
+    # 使用排序后的索引重新命名区域
+    for new_index, (y_min, y_max, region_label, x_min, x_max) in enumerate(regions, start=1):
+        # 创建与原图同样大小的透明背景图像
+        full_image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        
+        # 将裁剪区域复制到全图的正确位置
+        region_pixels = img_data[y_min:y_max + 1, x_min:x_max + 1]
+        region_mask_cropped = labeled[y_min:y_max + 1, x_min:x_max + 1] == region_label
+        
+        # 确保原图的裁剪区域放置在全图的正确位置
+        for i in range(y_min, y_max + 1):
+            for j in range(x_min, x_max + 1):
+                if region_mask_cropped[i - y_min, j - x_min]:
+                    full_image.putpixel((j, i), tuple(region_pixels[i - y_min, j - x_min]))
 
         # 保存图片，文件名使用 y_min 和 y_max 的平均值排序的顺序
         full_image.save(os.path.join(output_dir, f"{new_index}.png"))

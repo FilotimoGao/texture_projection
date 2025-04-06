@@ -9,6 +9,7 @@ using namespace std;
 // 全局变量来存储函数引用
 PyObject* pCutFunction = nullptr;
 PyObject* pTargetRangeFunction = nullptr;
+PyObject* pSegmentFunction = nullptr;
 
 
 GLuint loadTexture(const char* path, bool if_flip) {
@@ -229,6 +230,12 @@ std::string convertPath(const std::string& path) {
     return convertSlashes(absolutePath.string());
 }
 
+void createOutputDirectory(const std::string& path) {
+    if (!std::filesystem::exists(path)) {
+        std::filesystem::create_directories(path);
+    }
+}
+
 void initializePython(const std::string& lcnnPathStr) {
     Py_Initialize();
     if (!Py_IsInitialized()) {
@@ -240,22 +247,42 @@ void initializePython(const std::string& lcnnPathStr) {
     PyRun_SimpleString("import sys");
     PyRun_SimpleString(("sys.path.append('" + lcnnPathStr + "')").c_str());
 
-    // 导入模块并保存函数引用
-    PyObject* pModule = PyImport_ImportModule("demo");
-    if (pModule) {
-        pCutFunction = PyObject_GetAttrString(pModule, "cut");
-        pTargetRangeFunction = PyObject_GetAttrString(pModule, "target_range");
+    // 从 demo 模块导入函数
+    PyObject* pDemoModule = PyImport_ImportModule("demo");
+    if (pDemoModule) {
+        // 获取 cut 函数
+        pCutFunction = PyObject_GetAttrString(pDemoModule, "cut");
         if (!pCutFunction || !PyCallable_Check(pCutFunction)) {
             std::cout << "Cut function not found or not callable" << std::endl;
         }
+
+        // 获取 target_range 函数
+        pTargetRangeFunction = PyObject_GetAttrString(pDemoModule, "target_range");
         if (!pTargetRangeFunction || !PyCallable_Check(pTargetRangeFunction)) {
             std::cout << "Target range function not found or not callable" << std::endl;
         }
-        Py_DECREF(pModule); // 释放模块引用
+
+        Py_DECREF(pDemoModule); // 释放 demo 模块引用
     }
     else {
         PyErr_Print();
-        std::cout << "Module not found" << std::endl;
+        std::cout << "Demo module not found" << std::endl;
+    }
+
+    // 从 cutline 模块导入函数
+    PyObject* pCutlineModule = PyImport_ImportModule("cutline");
+    if (pCutlineModule) {
+        // 获取 segment 函数
+        pSegmentFunction = PyObject_GetAttrString(pCutlineModule, "segment");
+        if (!pSegmentFunction || !PyCallable_Check(pSegmentFunction)) {
+            std::cout << "Segment function not found or not callable" << std::endl;
+        }
+
+        Py_DECREF(pCutlineModule); // 释放 cutline 模块引用
+    }
+    else {
+        PyErr_Print();
+        std::cout << "Cutline module not found" << std::endl;
     }
 }
 
@@ -325,4 +352,48 @@ void processImageWithRangePy(const std::string& imagePath, glm::vec2 targetPoint
     }
 
     //PyGILState_Release(gstate); // 释放 GIL
+}
+
+void processImageWithSegmentPy(const std::string& imagePath, const std::vector<std::pair<glm::vec2, glm::vec2>>& lines) {
+    // 获取 GIL
+    // PyGILState_STATE gstate = PyGILState_Ensure();
+
+    // 检查函数是否存在
+    if (pSegmentFunction) { // 假设 pSegmentFunction 是全局变量，指向 Python 的 segment 函数
+        // 将参数转换为 Python 对象
+        std::string path = convertSlashes(imagePath);
+        PyObject* pArgs = PyTuple_New(2);
+
+        // 第一个参数：图像路径
+        PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(path.c_str()));
+
+        // 第二个参数：线段列表
+        PyObject* pLinesList = PyList_New(lines.size());
+        for (size_t i = 0; i < lines.size(); ++i) {
+            PyObject* pLineTuple = PyTuple_New(2);
+            PyTuple_SetItem(pLineTuple, 0, PyTuple_New(2));
+            PyTuple_SetItem(PyTuple_GetItem(pLineTuple, 0), 0, PyFloat_FromDouble(lines[i].first.x));
+            PyTuple_SetItem(PyTuple_GetItem(pLineTuple, 0), 1, PyFloat_FromDouble(lines[i].first.y));
+            PyTuple_SetItem(pLineTuple, 1, PyTuple_New(2));
+            PyTuple_SetItem(PyTuple_GetItem(pLineTuple, 1), 0, PyFloat_FromDouble(lines[i].second.x));
+            PyTuple_SetItem(PyTuple_GetItem(pLineTuple, 1), 1, PyFloat_FromDouble(lines[i].second.y));
+
+            // 将线段添加到列表中
+            PyList_SetItem(pLinesList, i, pLineTuple); // 注意：这里是引用计数的管理
+        }
+
+        // 将线段列表作为第二个参数传递
+        PyTuple_SetItem(pArgs, 1, pLinesList);
+
+        // 调用函数
+        PyObject_CallObject(pSegmentFunction, pArgs);
+
+        // 清理
+        Py_XDECREF(pArgs);
+    }
+    else {
+        std::cout << "Segment function not available" << std::endl;
+    }
+
+    // PyGILState_Release(gstate); // 释放 GIL
 }

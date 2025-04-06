@@ -7,6 +7,7 @@
 #include <atomic>
 #include <future>
 #include <filesystem>
+#include <STBIMAGE/stb_image_write.h>
 
 int model_num = 0;
 std::atomic<bool> isProcessing(false);
@@ -17,6 +18,7 @@ std::future<std::vector<std::string>> modelFuture; // 声明 future
 // 声明一个线程来处理Python相关操作
 //std::thread pythonThread;
 std::atomic<bool> pythonInitialized(false); // 标记Python是否已初始化
+std::string lcnnPathStr = convertPath("LCNN");
 
 float projectionAspectRatio = 1.0f; // 默认投影纹理长宽比
 float zOffsetFactor = 0.2f; // 用于控制模型面片之间的距离
@@ -25,7 +27,6 @@ void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4])
     isProcessing = true;
     processCompleted = false;
 
-    std::string lcnnPathStr = convertPath("LCNN");
 
     // 确保Python已初始化
     if (!pythonInitialized) {
@@ -59,6 +60,21 @@ void runImageProcessing(const std::string& imagePath, glm::vec2 targetPoints[4])
 
     isProcessing = false;
     processCompleted = true;
+}
+
+void saveScreenshot(const std::string& filename, int x, int y, int width, int height) {
+    // 创建一个像素缓冲区
+    std::vector<unsigned char> pixels(width * height * 3); // RGB格式
+    glReadPixels(x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+    // 保存图像（使用STB图像库）
+    stbi_flip_vertically_on_write(1); // 翻转图像以适应OpenGL坐标系
+    if (stbi_write_png(filename.c_str(), width, height, 3, pixels.data(), width * 3)) {
+        std::cout << "Screenshot saved to: " << filename << std::endl;
+    }
+    else {
+        std::cerr << "Failed to save screenshot!" << std::endl;
+    }
 }
 
 
@@ -139,6 +155,10 @@ bool Application::init(const int& width, const int& height) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.Fonts->AddFontFromFileTTF(convertPath("IMGUI/simsun.ttc").c_str(), 18.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
+
+    // 加载自定义字体（用于绘制文字区域）
+    customFont = io.Fonts->AddFontFromFileTTF(convertPath("IMGUI/bold.ttf").c_str(), 64.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
+
     ImGui::StyleColorsDark();
 
     // 绑定ImGui
@@ -299,42 +319,88 @@ void Application::workspaceUI() {
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::TextWrapped(u8"点击下方“Cut”，将调用LCNN进行楼梯图片剪切。");
-        if (ImGui::Button(u8"剪切（Cut）")) {
-        if (!selecImgPath.empty()) {
-            if (!isProcessing) {
-                // 创建新的 promise 和 future 对象
-                modelPromise = std::promise<std::vector<std::string>>(); // 创建新的 promise
-                modelFuture = modelPromise.get_future(); // 获取对应的 future
+        if (ImGui::Button(u8"L-CNN剪切（Cut）")) {
+            if (!selecImgPath.empty()) {
+                if (!isProcessing) {
+                    // 创建新的 promise 和 future 对象
+                    modelPromise = std::promise<std::vector<std::string>>(); // 创建新的 promise
+                    modelFuture = modelPromise.get_future(); // 获取对应的 future
 
-                // 创建并启动线程
-                std::thread processingThread(runImageProcessing, selecImgPath, targetPoints);
-                processingThread.detach(); // 使线程分离
-            } else {
-                std::cout << "Processing already in progress." << std::endl;
+                    // 创建并启动线程
+                    std::thread processingThread(runImageProcessing, selecImgPath, targetPoints);
+                    processingThread.detach(); // 使线程分离
+                }
+                else {
+                    std::cout << "Processing already in progress." << std::endl;
+                }
             }
-        } else {
-            ImGui::Text("Please select an image first!");
+            else {
+                ImGui::Text("Please select an image first!");
+            }
         }
-    }
 
-    // 显示处理状态和结果
-    if (isProcessing) {
-        ImGui::Text(u8"正在处理中……");
-        ImGui::Text(u8"模型预测可能需要一些时间，请耐心等待……");
-    }
-    if (processCompleted) {
-        ImGui::Text(u8"处理已完成！");
-        try {
-            std::vector<std::string> imageFiles = modelFuture.get(); // 获取处理结果
-            for (const auto& filePath : imageFiles) {
-                std::cout << "Loaded file: " << filePath << std::endl;
+        // 显示处理状态和结果
+        if (isProcessing) {
+            ImGui::Text(u8"正在处理中……");
+            ImGui::Text(u8"模型预测可能需要一些时间，请耐心等待……");
+        }
+        if (processCompleted) {
+            ImGui::Text(u8"处理已完成！");
+            try {
+                std::vector<std::string> imageFiles = modelFuture.get(); // 获取处理结果
+                for (const auto& filePath : imageFiles) {
+                    std::cout << "Loaded file: " << filePath << std::endl;
+                }
+                createModels(imageFiles);
+            }
+            catch (const std::exception& e) {
+                std::cerr << "Error retrieving results: " << e.what() << std::endl;
+            }
+            processCompleted = false; // 重置状态
+        }
+
+        // 处理简单剪切
+        ImGui::Separator();
+        static int numSegments = 5; // 默认剪切线数量
+        ImGui::SliderInt(u8"剪切线数量(Number of Lines)", &numSegments, 2, 10); // 输入剪切线数量
+
+        if (ImGui::Button(u8"简单剪切 (Simple Cut)")) {
+            // 生成均匀分布的水平剪切线
+            std::vector<std::pair<glm::vec2, glm::vec2>> lines;
+            for (int i = 0; i < numSegments; ++i) {
+                float y = (float)(i + 1) / (float)(numSegments + 1); // 均匀分布在图片高度上
+                lines.emplace_back(
+                    glm::vec2(0.0f, y * targetHeight), // 起点：x=0, y=y*height
+                    glm::vec2(targetWidth, y * targetHeight) // 终点：x=width, y=y*height
+                );
+            }
+
+            // 输出生成的平行线
+            std::cout << "生成的平行线（像素坐标）：" << std::endl;
+            for (const auto& line : lines) {
+                std::cout << "起点: (" << line.first.x << ", " << line.first.y << "), "
+                    << "终点: (" << line.second.x << ", " << line.second.y << ")" << std::endl;
+            }
+
+            if (!pythonInitialized) {
+                initializePython(lcnnPathStr);
+                pythonInitialized = true;
+            }
+
+            // 调用 Python 函数进行简单剪切
+            processImageWithSegmentPy(selecImgPath, lines);
+
+            std::vector<std::string> imageFiles;
+            namespace fs = std::filesystem;
+            for (const auto& entry : fs::directory_iterator("temp_output")) {
+                if (entry.is_regular_file()) {
+                    imageFiles.push_back(entry.path().string());
+                }
             }
             createModels(imageFiles);
-        } catch (const std::exception& e) {
-            std::cerr << "Error retrieving results: " << e.what() << std::endl;
         }
-        processCompleted = false; // 重置状态
-    }
+
+
     }
 
     // 处理文件选择对话框
@@ -350,10 +416,11 @@ void Application::workspaceUI() {
         }
         ImGuiFileDialog::Instance()->Close();
     }
+
     ImGui::End();
     // ------ 上部：由python完成的模型切割工作，模型切割工作区结束 ------ //
 
-    // ------ 下部：由OpenGL完成的模型控制工作，模型转换工作区开始 ------ //
+    // ------ 中部：由OpenGL完成的模型控制工作，模型转换工作区开始 ------ //
     ImGui::Begin(u8"3D模型控制 (Model Control)", nullptr);
     config.countSelectionMax = 50;
 
@@ -516,8 +583,52 @@ void Application::workspaceUI() {
         }
         ImGuiFileDialog::Instance()->Close();
     }
+
+    // 添加保存图片的按钮
+    if (ImGui::Button(u8"保存当前视图（Save Screenshot）")) {
+        // 确保temp_output目录存在
+        std::string outputDir = "temp_output";
+        createOutputDirectory(outputDir); // 创建目录
+
+        // 设置文件名
+        std::string filename = outputDir + "/screenshot.png"; // 你的文件路径
+        // 调用保存截图的函数
+        saveScreenshot(filename, appWidth * 0.3f, 0, appWidth * 0.7f, appHeight); // 使用渲染区域的宽度和高度
+    }
+
     ImGui::End();
-    // ------ 下部：由OpenGL完成的模型控制工作，模型转换工作区结束 ------ //
+    // ------ 中部：由OpenGL完成的模型控制工作，模型转换工作区结束 ------ //
+
+    // ------ 下部：文字选定和生成文字图片工作，图像编码工作区开始 ------ //
+    ImGui::Begin(u8"文字图片编码 (Encode)", nullptr);
+
+    // 显示提示信息
+    ImGui::TextWrapped(u8"在以下文本框输入需要编码的文字");
+
+    // 文本框（支持自动换行和滚动）
+    static char textBuffer[1024] = ""; // 用于存储输入的文本
+    ImGui::InputTextMultiline(
+        "##textInput",                // 控件 ID
+        textBuffer,                   // 文本缓冲区
+        IM_ARRAYSIZE(textBuffer),     // 缓冲区大小
+        ImVec2(300, 100),             // 文本框大小
+        ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_EnterReturnsTrue // 标志
+    );
+
+    // “生成”按钮
+    if (ImGui::Button(u8"生成 (Generate)")) {
+        textToDraw = textBuffer; // 将输入的文本保存到成员变量中
+        showTextUI = true; // 显示 drawTextUI 区域
+    }
+
+    ImGui::End();
+
+    // 显示 drawTextUI 窗口
+    if (showTextUI) {
+        drawTextUI();
+    }
+    // ------ 下部：文字选定和生成文字图片工作，图像编码工作区结束 ------ //
+
 
     ImGui::End();
 }
@@ -632,6 +743,66 @@ void Application::selectTargetUI() {
     }
 }
 
+void Application::drawTextUI() {
+    // 设置窗口位置和大小
+    ImGui::SetNextWindowPos(ImVec2(appWidth * 0.3f, 0));
+    ImGui::SetNextWindowSize(ImVec2(appWidth * 0.7f, appHeight));
+
+    // 修改窗口背景颜色和透明度
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.4f, 0.4f, 0.4f, 1.0f)); // 背景颜色（深灰色）和透明度（0.8）
+
+    ImGui::Begin(u8"文字图 (Text Image)", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+
+    // === 文字绘制区域 ===
+    ImGui::BeginChild("Text Drawing Area", ImVec2(0, appHeight * 0.7f), true); // 占据窗口高度的 70%
+    {
+        // 设置自定义字体
+        ImGui::PushFont(customFont);
+
+        // 创建一个 ImDrawList 对象，用于绘制文字
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+        // 获取窗口的左上角坐标
+        ImVec2 windowPos = ImGui::GetWindowPos();
+
+        // 设置文字的位置和颜色
+        ImVec2 textPos = ImVec2(windowPos.x + textPosition.x, windowPos.y + textPosition.y); // 文字的位置
+        ImU32 textColor = IM_COL32(255, 255, 255, 255); // 文字颜色（白色）
+
+        // 绘制文字（支持换行）
+        const char* text = textToDraw.c_str();
+        const char* textEnd = text + textToDraw.size();
+        const float wrapWidth = ImGui::GetWindowWidth() - textPosition.x; // 自动换行宽度
+        drawList->AddText(customFont, fontSize, textPos, textColor, text, textEnd, wrapWidth);
+
+        // 恢复默认字体
+        ImGui::PopFont();
+    }
+    ImGui::EndChild();
+
+    // === 设置和按钮区域 ===
+    ImGui::BeginChild("Settings and Buttons Area", ImVec2(0, 0), true); // 占据剩余空间
+    {
+        // 添加修改字体大小、位置和粗细的选项
+        ImGui::Text(u8"修改字体设置");
+        ImGui::SliderFloat(u8"字体大小 (Font Size)", &fontSize, 20.0f, 200.0f);
+        ImGui::InputFloat2(u8"文字位置 (Text Position)", &textPosition.x);
+
+        if (ImGui::Button(u8"退出 (Exit)", ImVec2(120, 40))) {
+            // 丢弃当前的字体设置
+            showTextUI = false; // 关闭 drawTextUI 区域
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::End();
+
+    // 恢复默认窗口背景颜色
+    ImGui::PopStyleColor();
+}
+
+
+
 void Application::createModels(const std::vector<std::string>& filePaths) {
     // 清理当前场景和选择的模型索引
     scene.clear();
@@ -681,6 +852,28 @@ void Application::createModels(const std::vector<std::string>& filePaths) {
     }
 }
 
+GLuint createFramebuffer(int width, int height) {
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Framebuffer is not complete!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return texture;
+}
+
 
 Application::Application()
     : appWidth(0), appHeight(0), appWindow(nullptr), shaderProgram(0),
@@ -690,7 +883,7 @@ Application::Application()
     selecImgTexID(0), selectTarget(false),
     targetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} },
     nextTargetPoints{ {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} },
-    targetWidth(0), targetHeight(0) {}
+    targetWidth(0), targetHeight(0), customFont(NULL) {}
 
 Application::~Application() {
     releaseInstance();
@@ -746,3 +939,5 @@ void Application::scroll_callback(double yoffset) {
     }
     camera.ProcessMouseScroll(yoffset);
 }
+
+

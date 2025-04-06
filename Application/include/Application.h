@@ -22,6 +22,8 @@
 #include <IMGUI/imgui_impl_opengl3.h>
 #include <IMGUI/ImGuiFileDialog.h>
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+
 #define app Application::getInstance()
 
 class Application {
@@ -78,4 +80,12 @@ private:
     void onMousePress(bool pressed); // 鼠标按下处理
     void mouse_callback(double xpos, double ypos);
     void scroll_callback(double yoffset);
+
+    // === Encode ===
+    ImFont* customFont; // 用于绘制文字区域的字体
+    std::string textToDraw; // 存储要绘制的文本
+    bool showTextUI = false; // 是否显示 drawTextUI 区域
+    float fontSize = 24.0f; // 字体大小
+    ImVec2 textPosition = ImVec2(50, 50); // 文字位置
+    void drawTextUI(); // 管理带有文字的图的 UI
 };

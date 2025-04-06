@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include <glad/glad.h>
 #include <Python.h>
 #include <iostream>
@@ -11,8 +12,10 @@ GLuint loadTexture(const char* path, int& width, int& height, bool if_flip = tru
 bool loadShaders(GLuint& shaderProgram);
 std::string convertSlashes(const std::string& path);
 std::string convertPath(const std::string& path);
+void createOutputDirectory(const std::string& path);
 
 void initializePython(const std::string& lcnnPathStr);
 void finalizePython();
 void processImageWithCutPy();
 void processImageWithRangePy(const std::string& imagePath, glm::vec2 targetPoints[4]);
+void processImageWithSegmentPy(const std::string& imagePath, const std::vector<std::pair<glm::vec2, glm::vec2>>& lines);
